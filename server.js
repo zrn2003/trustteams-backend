@@ -12,6 +12,9 @@ import authRouter from './src/routes/auth.js'
 import oppRouter from './src/routes/opportunities.js'
 import studentRouter from './src/routes/student.js'
 import pool from './src/db.js'
+import debugRouter from './src/routes/debug.js'
+import academicRouter from './src/routes/academic.js'
+import universityRouter from './src/routes/university.js'
 
 const app = express()
 
@@ -52,6 +55,9 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRouter)
 app.use('/api/opportunities', oppRouter)
 app.use('/api/student', studentRouter)
+app.use('/api/academic', academicRouter)
+app.use('/api/university', universityRouter)
+app.use('/api/debug', debugRouter)
 
 // 404 for API
 app.use('/api', (req, res) => {
@@ -64,6 +70,30 @@ app.use((err, req, res, next) => {
   console.error(err)
   res.status(500).json({ message: 'Server error' })
 })
+
+async function ensureStudentRoleEnum() {
+  try {
+    const [rows] = await pool.query(
+      `SELECT COLUMN_TYPE FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'role'`
+    )
+    const colType = rows?.[0]?.COLUMN_TYPE || ''
+    const needsStudent = !/\b'student'\b/.test(colType)
+    const needsAcademic = !/\b'academic_leader'\b/.test(colType)
+    const needsUniversity = !/\b'university_admin'\b/.test(colType)
+    if (!/enum\(/i.test(colType) || needsStudent || needsAcademic || needsUniversity) {
+      console.warn("Updating users.role ENUM to include required roles…")
+      await pool.query(
+        "ALTER TABLE users MODIFY role ENUM('admin','manager','viewer','student','academic_leader','university_admin') NOT NULL DEFAULT 'student'"
+      )
+      console.log("users.role ENUM updated")
+    } else {
+      console.log("users.role ENUM already includes required roles")
+    }
+  } catch (e) {
+    console.error('Failed to verify/update users.role ENUM:', e)
+  }
+}
 
 const basePort = Number(process.env.PORT || 3001)
 const maxPortAttempts = 5
@@ -80,6 +110,9 @@ function startServer(port, attemptsLeft) {
       } catch (dbErr) {
         console.error('DB connection error:', dbErr && dbErr.code ? dbErr.code : dbErr)
       }
+
+      // Run startup schema checks after server is ready
+      await ensureStudentRoleEnum()
     })
     .on('error', (err) => {
       if (err && err.code === 'EADDRINUSE' && attemptsLeft > 0) {

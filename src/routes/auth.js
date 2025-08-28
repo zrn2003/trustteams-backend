@@ -17,14 +17,31 @@ function buildDisplayName(body) {
 function mapUserTypeToRole(userType) {
   const t = (userType || '').toLowerCase()
   if (t === 'student') return 'student'
+  if (t === 'academic' || t === 'academic_leader' || t === 'leader') return 'academic_leader'
+  if (t === 'university' || t === 'university_admin' || t === 'university administration') return 'university_admin'
   if (t === 'icm' || t === 'manager' || t === 'admin') return 'manager'
   return 'viewer'
+}
+
+// Prefer explicit role from body when provided; fallback to userType mapping
+function deriveRoleFromBody(body) {
+  const explicitRole = (body?.role || '').toLowerCase()
+  const userType = (body?.userType || '').toLowerCase()
+
+  if (explicitRole === 'student' || userType === 'student') return 'student'
+  if (explicitRole === 'academic_leader' || userType === 'academic' || userType === 'academic_leader') return 'academic_leader'
+  // Normalize common synonyms to university_admin
+  if (explicitRole === 'university_admin' || explicitRole === 'university' || userType === 'university' || userType === 'university administration') return 'university_admin'
+
+  if (['admin', 'manager', 'viewer'].includes(explicitRole)) return explicitRole
+
+  return mapUserTypeToRole(userType)
 }
 
 // Signup endpoint
 router.post('/signup', async (req, res) => {
   try {
-    const { email, password, userType } = req.body || {}
+    const { email, password } = req.body || {}
     const displayName = buildDisplayName(req.body)
 
     // Basic validation aligned with frontend
@@ -46,7 +63,15 @@ router.post('/signup', async (req, res) => {
       return res.status(400).json({ message: 'User with this email already exists' })
     }
 
-    const role = mapUserTypeToRole(userType)
+    const role = deriveRoleFromBody(req.body)
+
+    // Debug: log derived role and incoming fields (without password)
+    console.log('Signup request -> derivedRole:', role, {
+      name: displayName,
+      email,
+      roleFromBody: (req.body?.role || '').toLowerCase(),
+      userTypeFromBody: (req.body?.userType || '').toLowerCase()
+    })
 
     // Create new user (plaintext password per current implementation)
     const [result] = await pool.query(
