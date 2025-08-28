@@ -3,6 +3,20 @@ import pool from '../db.js'
 
 const router = express.Router()
 
+// Helper function to get user role
+async function getUserRole(userId) {
+  try {
+    const [users] = await pool.query(
+      'SELECT role FROM users WHERE id = ?',
+      [userId]
+    )
+    return users.length > 0 ? users[0].role : null
+  } catch (error) {
+    console.error('Error getting user role:', error)
+    return null
+  }
+}
+
 // Get all opportunities with search, filtering, and pagination
 router.get('/', async (req, res) => {
   try {
@@ -297,7 +311,16 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Opportunity not found' })
     }
 
-    // Allow editing any opportunity (removed ownership check)
+    // Check user permissions for editing
+    const userRole = await getUserRole(userId)
+    if (!userRole) {
+      return res.status(401).json({ error: 'User not found' })
+    }
+
+    // Only allow editing if user is admin OR if user is the original poster
+    if (userRole !== 'admin' && existing[0].posted_by != userId) {
+      return res.status(403).json({ error: 'You can only edit your own posts' })
+    }
 
     const oldValues = existing[0]
 
@@ -343,7 +366,15 @@ router.delete('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Opportunity not found' })
     }
 
-    // Allow deleting any opportunity (removed ownership check)
+    // Check user permissions for deletion - only admins can delete
+    const userRole = await getUserRole(userId)
+    if (!userRole) {
+      return res.status(401).json({ error: 'User not found' })
+    }
+
+    if (userRole !== 'admin') {
+      return res.status(403).json({ error: 'Only administrators can delete posts' })
+    }
 
     // Soft delete
     await pool.query(
