@@ -1,0 +1,5 @@
+[33m2e4e98d[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Undergraduate Student Academic Leader and University Administration Authority with thier dashbord done
+[33ma0ca63d[m feat(student): profile API and wiring; opportunities dynamic; UI polish
+[33me3eae4e[m Implement role-based permissions: only admins can delete, users can only edit their own posts
+[33m7abf002[m Fix CORS configuration to allow production frontend domain
+[33m0d7482c[m Add Vercel configuration and environment variables template

@@ -44,12 +44,12 @@ app.use(morgan('dev'))
 
 // Root
 app.get('/', (req, res) => {
-  res.json({ service: 'trustteams-api', status: 'ok' })
+  res.json({ service: 'trustteams-api', status: 'ok', version: '1.0.1' })
 })
 
 // Health
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' })
+  res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
 app.use('/api/auth', authRouter)
