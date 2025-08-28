@@ -10,6 +10,7 @@ import cors from 'cors'
 import morgan from 'morgan'
 import authRouter from './src/routes/auth.js'
 import oppRouter from './src/routes/opportunities.js'
+import studentRouter from './src/routes/student.js'
 import pool from './src/db.js'
 
 const app = express()
@@ -50,6 +51,7 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api/auth', authRouter)
 app.use('/api/opportunities', oppRouter)
+app.use('/api/student', studentRouter)
 
 // 404 for API
 app.use('/api', (req, res) => {

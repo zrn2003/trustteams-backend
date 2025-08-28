@@ -3,18 +3,37 @@ import pool from '../db.js'
 
 const router = express.Router()
 
+// Helper to normalize name fields
+function buildDisplayName(body) {
+  const { firstName, lastName, name } = body || {}
+  const trimmedFirst = (firstName || '').trim()
+  const trimmedLast = (lastName || '').trim()
+  const trimmedName = (name || '').trim()
+  if (trimmedFirst || trimmedLast) return `${trimmedFirst} ${trimmedLast}`.trim()
+  return trimmedName
+}
+
+// Map userType to role used in DB (supports: admin, manager, viewer, student)
+function mapUserTypeToRole(userType) {
+  const t = (userType || '').toLowerCase()
+  if (t === 'student') return 'student'
+  if (t === 'icm' || t === 'manager' || t === 'admin') return 'manager'
+  return 'viewer'
+}
+
 // Signup endpoint
 router.post('/signup', async (req, res) => {
   try {
-    const { name, email, password } = req.body
+    const { email, password, userType } = req.body || {}
+    const displayName = buildDisplayName(req.body)
 
-    // Basic validation
-    if (!name || !email || !password) {
-      return res.status(400).json({ error: 'Name, email, and password are required' })
+    // Basic validation aligned with frontend
+    if (!displayName || !email || !password) {
+      return res.status(400).json({ message: 'Name, email and password are required' })
     }
 
     if (password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters' })
+      return res.status(400).json({ message: 'Password must be at least 6 characters' })
     }
 
     // Check if user already exists
@@ -24,38 +43,39 @@ router.post('/signup', async (req, res) => {
     )
 
     if (existingUsers.length > 0) {
-      return res.status(400).json({ error: 'User with this email already exists' })
+      return res.status(400).json({ message: 'User with this email already exists' })
     }
 
-    // Create new user (plaintext password as requested)
+    const role = mapUserTypeToRole(userType)
+
+    // Create new user (plaintext password per current implementation)
     const [result] = await pool.query(
       'INSERT INTO users (name, email, password_hash, role, is_active, created_at) VALUES (?, ?, ?, ?, ?, NOW())',
-      [name, email, password, 'viewer', true]
+      [displayName, email, password, role, true]
     )
 
-    res.status(201).json({
+    return res.status(201).json({
       message: 'User created successfully',
       user: {
         id: result.insertId,
-        name,
+        name: displayName,
         email,
-        role: 'viewer'
+        role
       }
     })
   } catch (error) {
     console.error('Signup error:', error)
-    res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ message: 'Internal server error' })
   }
 })
 
 // Login endpoint
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body
+    const { email, password } = req.body || {}
 
-    // Basic validation
     if (!email || !password) {
-      return res.status(400).json({ error: 'Email and password are required' })
+      return res.status(400).json({ message: 'Email and password are required' })
     }
 
     // Find user by email
@@ -65,29 +85,22 @@ router.post('/login', async (req, res) => {
     )
 
     if (users.length === 0) {
-      return res.status(401).json({ error: 'Invalid email or password' })
+      return res.status(401).json({ message: 'Invalid email or password' })
     }
 
     const user = users[0]
 
-    // Check if user is active
     if (!user.is_active) {
-      return res.status(401).json({ error: 'Account is deactivated' })
+      return res.status(401).json({ message: 'Account is deactivated' })
     }
 
-    // Compare passwords (plaintext as requested)
     if (user.password !== password) {
-      return res.status(401).json({ error: 'Invalid email or password' })
+      return res.status(401).json({ message: 'Invalid email or password' })
     }
 
-    // Update last login
-    await pool.query(
-      'UPDATE users SET last_login = NOW() WHERE id = ?',
-      [user.id]
-    )
+    await pool.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id])
 
-    // Return user info (without password)
-    res.json({
+    return res.json({
       message: 'Login successful',
       user: {
         id: user.id,
@@ -98,7 +111,7 @@ router.post('/login', async (req, res) => {
     })
   } catch (error) {
     console.error('Login error:', error)
-    res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ message: 'Internal server error' })
   }
 })
 
@@ -106,9 +119,9 @@ router.post('/login', async (req, res) => {
 router.get('/me', async (req, res) => {
   try {
     const userId = req.headers['x-user-id']
-    
+
     if (!userId) {
-      return res.status(401).json({ error: 'User ID required' })
+      return res.status(401).json({ message: 'User ID required' })
     }
 
     const [users] = await pool.query(
@@ -117,13 +130,13 @@ router.get('/me', async (req, res) => {
     )
 
     if (users.length === 0) {
-      return res.status(404).json({ error: 'User not found' })
+      return res.status(404).json({ message: 'User not found' })
     }
 
-    res.json({ user: users[0] })
+    return res.json({ user: users[0] })
   } catch (error) {
     console.error('Get profile error:', error)
-    res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ message: 'Internal server error' })
   }
 })
 
@@ -131,82 +144,70 @@ router.get('/me', async (req, res) => {
 router.put('/profile', async (req, res) => {
   try {
     const userId = req.headers['x-user-id']
-    const { name, email, currentPassword, newPassword } = req.body
+    const { name, email, currentPassword, newPassword } = req.body || {}
 
     if (!userId) {
-      return res.status(401).json({ error: 'User ID required' })
+      return res.status(401).json({ message: 'User ID required' })
     }
 
-    // Get current user
     const [users] = await pool.query(
       'SELECT id, name, email, password_hash as password FROM users WHERE id = ?',
       [userId]
     )
 
     if (users.length === 0) {
-      return res.status(404).json({ error: 'User not found' })
+      return res.status(404).json({ message: 'User not found' })
     }
 
     const user = users[0]
     const updates = []
     const values = []
 
-    // Update name if provided
     if (name && name !== user.name) {
       updates.push('name = ?')
       values.push(name)
     }
 
-    // Update email if provided
     if (email && email !== user.email) {
-      // Check if email is already taken
       const [existingUsers] = await pool.query(
         'SELECT id FROM users WHERE email = ? AND id != ?',
         [email, userId]
       )
-
       if (existingUsers.length > 0) {
-        return res.status(400).json({ error: 'Email is already taken' })
+        return res.status(400).json({ message: 'Email is already taken' })
       }
-
       updates.push('email = ?')
       values.push(email)
     }
 
-    // Update password if provided
     if (newPassword) {
       if (!currentPassword) {
-        return res.status(400).json({ error: 'Current password is required to change password' })
+        return res.status(400).json({ message: 'Current password is required to change password' })
       }
-
-      // Verify current password
       if (user.password !== currentPassword) {
-        return res.status(400).json({ error: 'Current password is incorrect' })
+        return res.status(400).json({ message: 'Current password is incorrect' })
       }
-
       if (newPassword.length < 6) {
-        return res.status(400).json({ error: 'New password must be at least 6 characters' })
+        return res.status(400).json({ message: 'New password must be at least 6 characters' })
       }
-
-             updates.push('password_hash = ?')
-       values.push(newPassword)
+      updates.push('password_hash = ?')
+      values.push(newPassword)
     }
 
     if (updates.length === 0) {
-      return res.status(400).json({ error: 'No changes provided' })
+      return res.status(400).json({ message: 'No changes provided' })
     }
 
-    // Update user
     values.push(userId)
     await pool.query(
       `UPDATE users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`,
       values
     )
 
-    res.json({ message: 'Profile updated successfully' })
+    return res.json({ message: 'Profile updated successfully' })
   } catch (error) {
     console.error('Update profile error:', error)
-    res.status(500).json({ error: 'Internal server error' })
+    return res.status(500).json({ message: 'Internal server error' })
   }
 })
 
