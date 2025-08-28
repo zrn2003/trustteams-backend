@@ -3,90 +3,127 @@ import pool from '../db.js'
 
 const router = express.Router()
 
+// Signup endpoint
 router.post('/signup', async (req, res) => {
   try {
-    const { name, email, password, role } = req.body || {}
-    if (!email || !password) {
-      return res.status(400).json({ message: 'Email and password are required' })
-    }
-    if (typeof email !== 'string' || typeof password !== 'string') {
-      return res.status(400).json({ message: 'Invalid input' })
-    }
+    const { name, email, password } = req.body
 
-    const [existing] = await pool.query('SELECT id FROM users WHERE email = ? LIMIT 1', [email])
-    if (existing && existing.length > 0) {
-      return res.status(409).json({ message: 'Email already registered' })
+    // Basic validation
+    if (!name || !email || !password) {
+      return res.status(400).json({ error: 'Name, email, and password are required' })
     }
 
-    // Store plaintext password as requested (not recommended for production)
-    const passwordHash = String(password)
-    const userRole = ['admin', 'manager', 'viewer'].includes(role) ? role : 'viewer' // Default to viewer
-
-    const [result] = await pool.query(
-      'INSERT INTO users (email, password_hash, name, role) VALUES (?, ?, ?, ?)',
-      [email, passwordHash, name || null, userRole]
-    )
-
-    return res.status(201).json({
-      message: 'Signup successful',
-      user: { 
-        id: result.insertId, 
-        email, 
-        name: name || 'User', 
-        role: userRole
-      }
-    })
-  } catch (err) {
-    console.error('Signup error:', err)
-    return res.status(500).json({ message: 'Server error' })
-  }
-})
-
-router.post('/login', async (req, res) => {
-  try {
-    const { email, password } = req.body || {}
-    if (!email || !password) {
-      return res.status(400).json({ message: 'Email and password are required' })
-    }
-    if (typeof email !== 'string' || typeof password !== 'string') {
-      return res.status(400).json({ message: 'Invalid input' })
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters' })
     }
 
-    const [rows] = await pool.query(
-      `SELECT id, email, password_hash AS passwordHash, name, role, is_active
-       FROM users 
-       WHERE email = ? LIMIT 1`,
+    // Check if user already exists
+    const [existingUsers] = await pool.query(
+      'SELECT id FROM users WHERE email = ?',
       [email]
     )
 
-    if (!rows || rows.length === 0) {
-      return res.status(401).json({ message: 'Invalid credentials' })
+    if (existingUsers.length > 0) {
+      return res.status(400).json({ error: 'User with this email already exists' })
     }
 
-    const user = rows[0]
+    // Create new user (plaintext password as requested)
+    const [result] = await pool.query(
+      'INSERT INTO users (name, email, password_hash, role, is_active, created_at) VALUES (?, ?, ?, ?, ?, NOW())',
+      [name, email, password, 'viewer', true]
+    )
+
+    res.status(201).json({
+      message: 'User created successfully',
+      user: {
+        id: result.insertId,
+        name,
+        email,
+        role: 'viewer'
+      }
+    })
+  } catch (error) {
+    console.error('Signup error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Login endpoint
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body
+
+    // Basic validation
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' })
+    }
+
+    // Find user by email
+    const [users] = await pool.query(
+      'SELECT id, name, email, password_hash as password, role, is_active FROM users WHERE email = ?',
+      [email]
+    )
+
+    if (users.length === 0) {
+      return res.status(401).json({ error: 'Invalid email or password' })
+    }
+
+    const user = users[0]
+
+    // Check if user is active
     if (!user.is_active) {
-      return res.status(401).json({ message: 'Account is deactivated' })
+      return res.status(401).json({ error: 'Account is deactivated' })
     }
 
-    const stored = user.passwordHash || ''
-    const isValid = String(password) === String(stored)
-    if (!isValid) return res.status(401).json({ message: 'Invalid credentials' })
+    // Compare passwords (plaintext as requested)
+    if (user.password !== password) {
+      return res.status(401).json({ error: 'Invalid email or password' })
+    }
 
     // Update last login
-    await pool.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id])
+    await pool.query(
+      'UPDATE users SET last_login = NOW() WHERE id = ?',
+      [user.id]
+    )
 
-    return res.json({
+    // Return user info (without password)
+    res.json({
       message: 'Login successful',
       user: {
         id: user.id,
+        name: user.name,
         email: user.email,
-        name: user.name || 'User',
         role: user.role
       }
     })
-  } catch (err) {
-    console.error('Login error:', err)
-    return res.status(500).json({ message: 'Server error' })
+  } catch (error) {
+    console.error('Login error:', error)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// Get current user profile
+router.get('/me', async (req, res) => {
+  try {
+    const userId = req.headers['x-user-id']
+    
+    if (!userId) {
+      return res.status(401).json({ error: 'User ID required' })
+    }
+
+    const [users] = await pool.query(
+      'SELECT id, name, email, role, is_active, last_login, created_at FROM users WHERE id = ?',
+      [userId]
+    )
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+
+    res.json({ user: users[0] })
+  } catch (error) {
+    console.error('Get profile error:', error)
+    res.status(500).json({ error: 'Internal server error' })
   }
 })
 
@@ -94,124 +131,82 @@ router.post('/login', async (req, res) => {
 router.put('/profile', async (req, res) => {
   try {
     const userId = req.headers['x-user-id']
+    const { name, email, currentPassword, newPassword } = req.body
+
     if (!userId) {
-      return res.status(401).json({ message: 'Not authenticated' })
+      return res.status(401).json({ error: 'User ID required' })
     }
 
-    const { name, email, currentPassword, newPassword } = req.body || {}
-    
-    // Validate required fields
-    if (!name || !email) {
-      return res.status(400).json({ message: 'Name and email are required' })
-    }
-
-    // Check if email is already taken by another user
-    const [existingEmail] = await pool.query(
-      'SELECT id FROM users WHERE email = ? AND id != ? LIMIT 1',
-      [email, userId]
+    // Get current user
+    const [users] = await pool.query(
+      'SELECT id, name, email, password_hash as password FROM users WHERE id = ?',
+      [userId]
     )
-    if (existingEmail && existingEmail.length > 0) {
-      return res.status(409).json({ message: 'Email is already taken by another user' })
+
+    if (users.length === 0) {
+      return res.status(404).json({ error: 'User not found' })
     }
 
-    // If changing password, validate current password
+    const user = users[0]
+    const updates = []
+    const values = []
+
+    // Update name if provided
+    if (name && name !== user.name) {
+      updates.push('name = ?')
+      values.push(name)
+    }
+
+    // Update email if provided
+    if (email && email !== user.email) {
+      // Check if email is already taken
+      const [existingUsers] = await pool.query(
+        'SELECT id FROM users WHERE email = ? AND id != ?',
+        [email, userId]
+      )
+
+      if (existingUsers.length > 0) {
+        return res.status(400).json({ error: 'Email is already taken' })
+      }
+
+      updates.push('email = ?')
+      values.push(email)
+    }
+
+    // Update password if provided
     if (newPassword) {
       if (!currentPassword) {
-        return res.status(400).json({ message: 'Current password is required to change password' })
+        return res.status(400).json({ error: 'Current password is required to change password' })
       }
 
-      const [userRows] = await pool.query(
-        'SELECT password_hash FROM users WHERE id = ? LIMIT 1',
-        [userId]
-      )
-      
-      if (!userRows || userRows.length === 0) {
-        return res.status(404).json({ message: 'User not found' })
+      // Verify current password
+      if (user.password !== currentPassword) {
+        return res.status(400).json({ error: 'Current password is incorrect' })
       }
 
-      const storedPassword = userRows[0].password_hash
-      if (String(currentPassword) !== String(storedPassword)) {
-        return res.status(401).json({ message: 'Current password is incorrect' })
+      if (newPassword.length < 6) {
+        return res.status(400).json({ error: 'New password must be at least 6 characters' })
       }
+
+             updates.push('password_hash = ?')
+       values.push(newPassword)
     }
 
-    // Update user profile
-    const updateFields = ['name = ?', 'email = ?']
-    const updateValues = [name, email]
-
-    if (newPassword) {
-      updateFields.push('password_hash = ?')
-      updateValues.push(String(newPassword))
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No changes provided' })
     }
 
-    updateValues.push(userId)
-
+    // Update user
+    values.push(userId)
     await pool.query(
-      `UPDATE users SET ${updateFields.join(', ')}, updated_at = NOW() WHERE id = ?`,
-      updateValues
+      `UPDATE users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`,
+      values
     )
 
-    // Get updated user info
-    const [updatedUser] = await pool.query(
-      `SELECT id, email, name, role, is_active, last_login
-       FROM users 
-       WHERE id = ? LIMIT 1`,
-      [userId]
-    )
-
-    if (!updatedUser || updatedUser.length === 0) {
-      return res.status(404).json({ message: 'User not found' })
-    }
-
-    const user = updatedUser[0]
-    return res.json({
-      message: 'Profile updated successfully',
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        lastLogin: user.last_login
-      }
-    })
-  } catch (err) {
-    console.error('Profile update error:', err)
-    return res.status(500).json({ message: 'Server error' })
-  }
-})
-
-// Get current user info
-router.get('/me', async (req, res) => {
-  try {
-    const userId = req.headers['x-user-id']
-    if (!userId) {
-      return res.status(401).json({ message: 'Not authenticated' })
-    }
-
-    const [rows] = await pool.query(
-      `SELECT id, email, name, role, is_active, last_login
-       FROM users 
-       WHERE id = ? LIMIT 1`,
-      [userId]
-    )
-
-    if (!rows || rows.length === 0) {
-      return res.status(404).json({ message: 'User not found' })
-    }
-
-    const user = rows[0]
-    return res.json({
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        lastLogin: user.last_login
-      }
-    })
-  } catch (err) {
-    console.error('Get user error:', err)
-    return res.status(500).json({ message: 'Server error' })
+    res.json({ message: 'Profile updated successfully' })
+  } catch (error) {
+    console.error('Update profile error:', error)
+    res.status(500).json({ error: 'Internal server error' })
   }
 })
 
