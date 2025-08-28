@@ -2,8 +2,8 @@
 -- This file creates the database structure for the TrustTeams collaboration platform
 
 -- Create database if it doesn't exist
-CREATE DATABASE IF NOT EXISTS defaultdb;
-USE defaultdb;
+CREATE DATABASE IF NOT EXISTS trustteams;
+USE trustteams;
 
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
