@@ -114,11 +114,17 @@ router.get('/', async (req, res) => {
       title: opp.title,
       type: opp.type,
       description: opp.description,
+      requirements: opp.requirements,
+      stipend: opp.stipend,
+      duration: opp.duration,
       location: opp.location,
       status: opp.status,
       closingDate: opp.closing_date,
+      deadline: opp.closing_date,
       postedBy: opp.posted_by,
       postedByName: opp.postedByName,
+      contact_email: opp.contact_email,
+      contact_phone: opp.contact_phone,
       deletedAt: opp.deleted_at,
       createdAt: opp.created_at,
       updatedAt: opp.updated_at
@@ -174,35 +180,56 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const userId = req.headers['x-user-id']
-    const { title, type, description, location, status, closingDate } = req.body
+    const { 
+      title, 
+      type, 
+      description, 
+      requirements, 
+      stipend, 
+      duration, 
+      location, 
+      status = 'open', 
+      deadline, 
+      contact_email, 
+      contact_phone 
+    } = req.body
 
     if (!userId) {
       return res.status(401).json({ error: 'User ID required' })
     }
 
-    if (!title || !type || !description || !location || !status) {
-      return res.status(400).json({ error: 'All fields are required' })
+    if (!title || !type || !description) {
+      return res.status(400).json({ error: 'Title, type, and description are required' })
     }
 
-    // Validate closing date
-    if (closingDate) {
-      const closingDateObj = new Date(closingDate)
-      if (isNaN(closingDateObj.getTime())) {
-        return res.status(400).json({ error: 'Invalid closing date' })
+    // Validate deadline if provided
+    let closingDate = null
+    if (deadline) {
+      const deadlineObj = new Date(deadline)
+      if (isNaN(deadlineObj.getTime())) {
+        return res.status(400).json({ error: 'Invalid deadline date' })
       }
+      closingDate = deadlineObj
     }
 
     const [result] = await pool.query(
-      `INSERT INTO opportunities (title, type, description, location, status, closing_date, posted_by, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
-      [title, type, description, location, status, closingDate, userId]
+      `INSERT INTO opportunities (
+        title, type, description, requirements, stipend, duration, 
+        location, status, closing_date, posted_by, contact_email, contact_phone, 
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+      [title, type, description, requirements || null, stipend || null, duration || null, 
+       location || 'Not specified', status, closingDate, userId, contact_email || null, contact_phone || null]
     )
 
     // Log audit trail
     await pool.query(
       `INSERT INTO opportunity_audit (opportunity_id, action, changed_by, new_values, created_at)
        VALUES (?, ?, ?, ?, NOW())`,
-      [result.insertId, 'CREATE', userId, JSON.stringify(req.body)]
+      [result.insertId, 'CREATE', userId, JSON.stringify({
+        title, type, description, requirements, stipend, duration, 
+        location, status, closing_date: closingDate, contact_email, contact_phone
+      })]
     )
 
     res.status(201).json({
@@ -212,9 +239,15 @@ router.post('/', async (req, res) => {
         title,
         type,
         description,
+        requirements,
+        stipend,
+        duration,
         location,
         status,
-        closingDate
+        closing_date: closingDate,
+        contact_email,
+        contact_phone,
+        posted_by: userId
       }
     })
   } catch (error) {
@@ -269,11 +302,17 @@ router.get('/:id', async (req, res) => {
       title: opportunity.title,
       type: opportunity.type,
       description: opportunity.description,
+      requirements: opportunity.requirements,
+      stipend: opportunity.stipend,
+      duration: opportunity.duration,
       location: opportunity.location,
       status: opportunity.status,
       closingDate: opportunity.closing_date,
+      deadline: opportunity.closing_date,
       postedBy: opportunity.posted_by,
       postedByName: opportunity.postedByName,
+      contact_email: opportunity.contact_email,
+      contact_phone: opportunity.contact_phone,
       deletedAt: opportunity.deleted_at,
       createdAt: opportunity.created_at,
       updatedAt: opportunity.updated_at
@@ -291,14 +330,26 @@ router.put('/:id', async (req, res) => {
   try {
     const userId = req.headers['x-user-id']
     const { id } = req.params
-    const { title, type, description, location, status, closingDate } = req.body
+    const { 
+      title, 
+      type, 
+      description, 
+      requirements, 
+      stipend, 
+      duration, 
+      location, 
+      status, 
+      deadline, 
+      contact_email, 
+      contact_phone 
+    } = req.body
 
     if (!userId) {
       return res.status(401).json({ error: 'User ID required' })
     }
 
-    if (!title || !type || !description || !location || !status) {
-      return res.status(400).json({ error: 'All fields are required' })
+    if (!title || !type || !description) {
+      return res.status(400).json({ error: 'Title, type, and description are required' })
     }
 
     // Check if opportunity exists
@@ -324,19 +375,34 @@ router.put('/:id', async (req, res) => {
 
     const oldValues = existing[0]
 
+    // Validate deadline if provided
+    let closingDate = null
+    if (deadline) {
+      const deadlineObj = new Date(deadline)
+      if (isNaN(deadlineObj.getTime())) {
+        return res.status(400).json({ error: 'Invalid deadline date' })
+      }
+      closingDate = deadlineObj
+    }
+
     // Update opportunity
     await pool.query(
       `UPDATE opportunities 
-       SET title = ?, type = ?, description = ?, location = ?, status = ?, closing_date = ?, updated_at = NOW()
+       SET title = ?, type = ?, description = ?, requirements = ?, stipend = ?, duration = ?, 
+           location = ?, status = ?, closing_date = ?, contact_email = ?, contact_phone = ?, updated_at = NOW()
        WHERE id = ?`,
-      [title, type, description, location, status, closingDate, id]
+      [title, type, description, requirements || null, stipend || null, duration || null, 
+       location || 'Not specified', status || 'open', closingDate, contact_email || null, contact_phone || null, id]
     )
 
     // Log audit trail
     await pool.query(
       `INSERT INTO opportunity_audit (opportunity_id, action, changed_by, old_values, new_values, created_at)
        VALUES (?, ?, ?, ?, ?, NOW())`,
-      [id, 'UPDATE', userId, JSON.stringify(oldValues), JSON.stringify(req.body)]
+      [id, 'UPDATE', userId, JSON.stringify(oldValues), JSON.stringify({
+        title, type, description, requirements, stipend, duration, 
+        location, status, closing_date: closingDate, contact_email, contact_phone
+      })]
     )
 
     res.json({ message: 'Opportunity updated successfully' })

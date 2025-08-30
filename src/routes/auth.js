@@ -41,56 +41,293 @@ function deriveRoleFromBody(body) {
 // Signup endpoint
 router.post('/signup', async (req, res) => {
   try {
-    const { email, password } = req.body || {}
+    console.log('=== SIGNUP REQUEST START ===')
+    console.log('Request body:', JSON.stringify(req.body, null, 2))
+    
+    const { email, password, university_id, institute_name } = req.body || {}
     const displayName = buildDisplayName(req.body)
+
+    console.log('Parsed data:', {
+      displayName,
+      email,
+      university_id,
+      institute_name,
+      hasPassword: !!password
+    })
 
     // Basic validation aligned with frontend
     if (!displayName || !email || !password) {
+      console.log('Validation failed: missing required fields')
       return res.status(400).json({ message: 'Name, email and password are required' })
     }
 
     if (password.length < 6) {
+      console.log('Validation failed: password too short')
       return res.status(400).json({ message: 'Password must be at least 6 characters' })
     }
 
     // Check if user already exists
-    const [existingUsers] = await pool.query(
-      'SELECT id FROM users WHERE email = ?',
-      [email]
-    )
+    try {
+      console.log('Checking for existing user with email:', email)
+      const [existingUsers] = await pool.query(
+        'SELECT id FROM users WHERE email = ?',
+        [email]
+      )
 
-    if (existingUsers.length > 0) {
-      return res.status(400).json({ message: 'User with this email already exists' })
+      if (existingUsers.length > 0) {
+        console.log('User already exists with email:', email)
+        return res.status(400).json({ message: 'User with this email already exists' })
+      }
+      console.log('No existing user found')
+    } catch (dbError) {
+      console.error('Database connection error during signup:', dbError)
+      return res.status(500).json({ 
+        message: 'Database connection error. Please try again later.',
+        details: dbError.message 
+      })
     }
 
     const role = deriveRoleFromBody(req.body)
+    console.log('Derived role:', role)
 
-    // Debug: log derived role and incoming fields (without password)
-    console.log('Signup request -> derivedRole:', role, {
-      name: displayName,
-      email,
-      roleFromBody: (req.body?.role || '').toLowerCase(),
-      userTypeFromBody: (req.body?.userType || '').toLowerCase()
-    })
+    // Handle different registration flows based on role
+    if (role === 'university_admin') {
+      console.log('Processing university admin registration')
+      // University admin registration - can create new university or select existing
+      const { university_name, university_domain, university_address, university_website, university_contact_email, university_contact_phone, university_established_year } = req.body
 
-    // Create new user (plaintext password per current implementation)
-    const [result] = await pool.query(
-      'INSERT INTO users (name, email, password_hash, role, is_active, created_at) VALUES (?, ?, ?, ?, ?, NOW())',
-      [displayName, email, password, role, true]
-    )
+      let universityId = university_id
 
-    return res.status(201).json({
-      message: 'User created successfully',
-      user: {
-        id: result.insertId,
-        name: displayName,
-        email,
-        role
+      try {
+        // If university_id is provided, use existing university
+        if (university_id) {
+          console.log('Using existing university ID:', university_id)
+          // Check if university exists
+          const [universities] = await pool.query(
+            'SELECT id FROM universities WHERE id = ? AND is_active = true',
+            [university_id]
+          )
+
+          if (universities.length === 0) {
+            console.log('University not found with ID:', university_id)
+            return res.status(400).json({ message: 'University not found' })
+          }
+
+          // Check if university already has an admin
+          const [existingAdmins] = await pool.query(
+            'SELECT id FROM users WHERE university_id = ? AND role = ?',
+            [university_id, 'university_admin']
+          )
+
+          if (existingAdmins.length > 0) {
+            console.log('University already has an admin')
+            return res.status(400).json({ message: 'University already has an administrator' })
+          }
+        } else {
+          console.log('Creating new university')
+          // Create new university
+          if (!university_name || !university_domain) {
+            console.log('Missing university name or domain')
+            return res.status(400).json({ message: 'University name and domain are required for new university creation' })
+          }
+
+          // Check if university with this name or domain already exists
+          const [existingUniversities] = await pool.query(
+            'SELECT id FROM universities WHERE name = ? OR domain = ?',
+            [university_name, university_domain]
+          )
+
+          if (existingUniversities.length > 0) {
+            console.log('University with name or domain already exists')
+            return res.status(400).json({ message: 'University with this name or domain already exists' })
+          }
+
+          // Create new university
+          console.log('Inserting new university')
+          const [universityResult] = await pool.query(
+            'INSERT INTO universities (name, domain, address, website, contact_email, contact_phone, established_year, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, true)',
+            [university_name, university_domain, university_address, university_website, university_contact_email, university_contact_phone, university_established_year]
+          )
+
+          universityId = universityResult.insertId
+          console.log('New university created with ID:', universityId)
+        }
+
+        // Create university admin (auto-approved)
+        console.log('Creating university admin user')
+        const [result] = await pool.query(
+          'INSERT INTO users (name, email, password, role, university_id, approval_status, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())',
+          [displayName, email, password, role, universityId, 'approved', true]
+        )
+
+        console.log('University admin created successfully with ID:', result.insertId)
+        return res.status(201).json({
+          message: 'University administrator created successfully',
+          user: {
+            id: result.insertId,
+            name: displayName,
+            email,
+            role,
+            university_id: universityId,
+            approval_status: 'approved'
+          }
+        })
+      } catch (dbError) {
+        console.error('Database error during university admin signup:', dbError)
+        console.error('Error stack:', dbError.stack)
+        
+        // If tables don't exist, return a helpful error message
+        if (dbError.message.includes("doesn't exist")) {
+          return res.status(500).json({ 
+            message: 'Database setup incomplete. Please contact the administrator to set up the database tables.',
+            details: 'Required database tables are missing'
+          })
+        }
+        
+        return res.status(500).json({ 
+          message: 'Database error during registration. Please try again later.',
+          details: dbError.message 
+        })
       }
-    })
+    } else if (role === 'student' || role === 'academic_leader') {
+      console.log('Processing student/academic leader registration')
+      // Student/Academic Leader registration - requires university validation and approval
+      if (!university_id || !institute_name) {
+        console.log('Missing university_id or institute_name')
+        return res.status(400).json({ message: 'University ID and institute name are required for student/academic leader registration' })
+      }
+
+      try {
+        console.log('Checking if university exists:', university_id)
+        // Check if university exists
+        const [universities] = await pool.query(
+          'SELECT id, name FROM universities WHERE id = ? AND is_active = true',
+          [university_id]
+        )
+
+        if (universities.length === 0) {
+          console.log('University not found:', university_id)
+          return res.status(400).json({ message: 'University not found. Please select a valid university.' })
+        }
+
+        console.log('University found:', universities[0].name)
+
+        // Check if university has an admin
+        console.log('Checking if university has an admin')
+        const [universityAdmins] = await pool.query(
+          'SELECT id FROM users WHERE university_id = ? AND role = ? AND approval_status = ?',
+          [university_id, 'university_admin', 'approved']
+        )
+
+        if (universityAdmins.length === 0) {
+          console.log('University has no approved admin')
+          return res.status(400).json({ message: 'University does not have an administrator yet. Please contact the system administrator.' })
+        }
+
+        console.log('University has admin, creating user')
+        // Create user with pending approval
+        const [result] = await pool.query(
+          'INSERT INTO users (name, email, password, role, university_id, institute_name, approval_status, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+          [displayName, email, password, role, university_id, institute_name, 'pending', false]
+        )
+
+        console.log('User created with ID:', result.insertId)
+
+        // Create registration request
+        console.log('Creating registration request')
+        await pool.query(
+          'INSERT INTO registration_requests (user_id, university_id, institute_name, role, status, created_at) VALUES (?, ?, ?, ?, ?, NOW())',
+          [result.insertId, university_id, institute_name, role, 'pending']
+        )
+
+        console.log('Registration request created successfully')
+        return res.status(201).json({
+          message: 'Registration request submitted successfully. Please wait for university administrator approval.',
+          user: {
+            id: result.insertId,
+            name: displayName,
+            email,
+            role,
+            university_id,
+            institute_name,
+            approval_status: 'pending'
+          }
+        })
+      } catch (dbError) {
+        console.error('Database error during student/academic leader signup:', dbError)
+        console.error('Error stack:', dbError.stack)
+        console.error('Error details:', {
+          message: dbError.message,
+          code: dbError.code,
+          sqlMessage: dbError.sqlMessage,
+          sqlState: dbError.sqlState
+        })
+        
+        // If tables don't exist, return a helpful error message
+        if (dbError.message.includes("doesn't exist")) {
+          return res.status(500).json({ 
+            message: 'Database setup incomplete. Please contact the administrator to set up the database tables.',
+            details: 'Required database tables are missing'
+          })
+        }
+        
+        return res.status(500).json({ 
+          message: 'Database error during registration. Please try again later.',
+          details: dbError.message 
+        })
+      }
+    } else {
+      console.log('Processing ICM role registration:', role)
+      // ICM roles (admin, manager, viewer) - auto-approved
+      try {
+        const [result] = await pool.query(
+          'INSERT INTO users (name, email, password, role, approval_status, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())',
+          [displayName, email, password, role, 'approved', true]
+        )
+
+        console.log('ICM user created successfully with ID:', result.insertId)
+        return res.status(201).json({
+          message: 'User created successfully',
+          user: {
+            id: result.insertId,
+            name: displayName,
+            email,
+            role,
+            approval_status: 'approved'
+          }
+        })
+      } catch (dbError) {
+        console.error('Database error during ICM role signup:', dbError)
+        console.error('Error stack:', dbError.stack)
+        
+        // If tables don't exist, return a helpful error message
+        if (dbError.message.includes("doesn't exist")) {
+          return res.status(500).json({ 
+            message: 'Database setup incomplete. Please contact the administrator to set up the database tables.',
+            details: 'Required database tables are missing'
+          })
+        }
+        
+        return res.status(500).json({ 
+          message: 'Database error during registration. Please try again later.',
+          details: dbError.message 
+        })
+      }
+    }
   } catch (error) {
+    console.error('=== SIGNUP ERROR ===')
     console.error('Signup error:', error)
-    return res.status(500).json({ message: 'Internal server error' })
+    console.error('Error stack:', error.stack)
+    console.error('Error details:', {
+      message: error.message,
+      code: error.code,
+      sqlMessage: error.sqlMessage,
+      sqlState: error.sqlState
+    })
+    return res.status(500).json({ 
+      message: 'Internal server error',
+      details: error.message 
+    })
   }
 })
 
@@ -105,7 +342,7 @@ router.post('/login', async (req, res) => {
 
     // Find user by email
     const [users] = await pool.query(
-      'SELECT id, name, email, password_hash as password, role, is_active FROM users WHERE email = ?',
+      'SELECT id, name, email, password, role, approval_status, is_active, university_id, institute_name FROM users WHERE email = ?',
       [email]
     )
 
@@ -123,6 +360,21 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ message: 'Invalid email or password' })
     }
 
+    // Check approval status for student and academic_leader roles
+    if ((user.role === 'student' || user.role === 'academic_leader') && user.approval_status !== 'approved') {
+      if (user.approval_status === 'pending') {
+        return res.status(403).json({ 
+          message: 'Your registration is pending approval from the university administrator. Please wait for approval before logging in.',
+          approval_status: 'pending'
+        })
+      } else if (user.approval_status === 'rejected') {
+        return res.status(403).json({ 
+          message: 'Your registration has been rejected. Please contact the university administrator for more information.',
+          approval_status: 'rejected'
+        })
+      }
+    }
+
     await pool.query('UPDATE users SET last_login = NOW() WHERE id = ?', [user.id])
 
     return res.json({
@@ -131,7 +383,10 @@ router.post('/login', async (req, res) => {
         id: user.id,
         name: user.name,
         email: user.email,
-        role: user.role
+        role: user.role,
+        approval_status: user.approval_status,
+        university_id: user.university_id,
+        institute_name: user.institute_name
       }
     })
   } catch (error) {
@@ -176,7 +431,7 @@ router.put('/profile', async (req, res) => {
     }
 
     const [users] = await pool.query(
-      'SELECT id, name, email, password_hash as password FROM users WHERE id = ?',
+      'SELECT id, name, email, password FROM users WHERE id = ?',
       [userId]
     )
 
@@ -215,7 +470,7 @@ router.put('/profile', async (req, res) => {
       if (newPassword.length < 6) {
         return res.status(400).json({ message: 'New password must be at least 6 characters' })
       }
-      updates.push('password_hash = ?')
+      updates.push('password = ?')
       values.push(newPassword)
     }
 

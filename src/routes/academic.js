@@ -75,4 +75,54 @@ router.delete('/students/:id', async (req, res) => {
   }
 })
 
+// GET /api/academic/:academicId/opportunities - get opportunities posted by academic leader
+router.get('/:academicId/opportunities', async (req, res) => {
+  try {
+    const academicId = Number(req.params.academicId)
+    if (!academicId) return res.status(400).json({ message: 'Invalid academic ID' })
+
+    // Verify the academic leader exists and is requesting their own opportunities
+    if (academicId !== req.currentUser.id) {
+      return res.status(403).json({ message: 'Can only view your own opportunities' })
+    }
+
+    const [opportunities] = await pool.query(
+      `SELECT o.id, o.title, o.type, o.description, o.requirements, o.stipend, o.duration,
+              o.location, o.status, o.closing_date, o.contact_email, o.contact_phone,
+              o.posted_by, o.created_at, o.updated_at, u.name as postedByName
+       FROM opportunities o
+       LEFT JOIN users u ON o.posted_by = u.id
+       WHERE o.posted_by = ? AND o.deleted_at IS NULL
+       ORDER BY o.created_at DESC`,
+      [academicId]
+    )
+
+    // Transform field names to match frontend expectations
+    const transformedOpportunities = opportunities.map(opp => ({
+      id: opp.id,
+      title: opp.title,
+      type: opp.type,
+      description: opp.description,
+      requirements: opp.requirements,
+      stipend: opp.stipend,
+      duration: opp.duration,
+      location: opp.location,
+      status: opp.status,
+      closingDate: opp.closing_date,
+      deadline: opp.closing_date,
+      postedBy: opp.posted_by,
+      postedByName: opp.postedByName,
+      contact_email: opp.contact_email,
+      contact_phone: opp.contact_phone,
+      createdAt: opp.created_at,
+      updatedAt: opp.updated_at
+    }))
+
+    return res.json({ opportunities: transformedOpportunities })
+  } catch (e) {
+    console.error('get academic opportunities error', e)
+    return res.status(500).json({ message: 'Failed to get opportunities' })
+  }
+})
+
 export default router
