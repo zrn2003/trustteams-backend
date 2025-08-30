@@ -1,0 +1,32 @@
+@echo off
+echo Creating .env file for Aiven MySQL database...
+
+(
+echo # Database Configuration ^(Aiven MySQL^)
+echo DB_HOST=YOUR_AIVEN_MYSQL_HOST
+echo DB_PORT=YOUR_AIVEN_MYSQL_PORT
+echo DB_USER=YOUR_AIVEN_MYSQL_USER
+echo DB_PASSWORD=YOUR_AIVEN_MYSQL_PASSWORD
+echo DB_NAME=YOUR_AIVEN_MYSQL_DATABASE
+echo.
+echo # Server Configuration
+echo PORT=3001
+echo NODE_ENV=development
+echo.
+echo # Optional: Logging
+echo LOG_LEVEL=info
+echo.
+echo # Optional: Security
+echo SESSION_SECRET=your-session-secret-key
+echo.
+echo # Optional: Rate Limiting
+echo RATE_LIMIT_WINDOW_MS=900000
+echo RATE_LIMIT_MAX_REQUESTS=100
+) > .env
+
+echo .env file created successfully with Aiven database credentials!
+echo.
+echo Next steps:
+echo 1. Run the database setup script
+echo 2. Start the backend server
+pause

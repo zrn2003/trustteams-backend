@@ -11,6 +11,12 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 
+# Setup files with credentials
+setup-aiven-db.ps1
+setup-aiven-env.bat
+setup-trustteams-env.bat
+setup-env.bat
+
 # Logs
 logs
 *.log

@@ -1,0 +1,36 @@
+# TrustTeams Database Setup for Aiven MySQL
+Write-Host "Setting up TrustTeams database on Aiven MySQL..." -ForegroundColor Green
+
+# Aiven MySQL connection details
+# Replace these with your actual Aiven MySQL credentials
+$dbHost = "YOUR_AIVEN_MYSQL_HOST"
+$dbPort = "YOUR_AIVEN_MYSQL_PORT"
+$dbUser = "YOUR_AIVEN_MYSQL_USER"
+$dbPassword = "YOUR_AIVEN_MYSQL_PASSWORD"
+$dbName = "YOUR_AIVEN_MYSQL_DATABASE"
+
+# Read the SQL file
+$sqlContent = Get-Content "setup-aiven-simple.sql" -Raw
+
+Write-Host "Connecting to Aiven MySQL database..." -ForegroundColor Yellow
+
+# Run the SQL script using mysql command
+try {
+    $env:MYSQL_PWD = $dbPassword
+    $sqlContent | mysql -h $dbHost -P $dbPort -u $dbUser --ssl-mode=REQUIRED $dbName
+    
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "✅ Database setup completed successfully!" -ForegroundColor Green
+        Write-Host "Tables created and sample data inserted." -ForegroundColor Green
+    } else {
+        Write-Host "❌ Database setup failed!" -ForegroundColor Red
+    }
+} catch {
+    Write-Host "❌ Error connecting to database: $_" -ForegroundColor Red
+} finally {
+    $env:MYSQL_PWD = $null
+}
+
+Write-Host "`nNext steps:" -ForegroundColor Cyan
+Write-Host "1. Start the backend server: npm start" -ForegroundColor White
+Write-Host "2. Test the registration functionality" -ForegroundColor White
