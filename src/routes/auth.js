@@ -1,5 +1,6 @@
 import express from 'express'
 import pool from '../db.js'
+import { sendEmail, generateVerificationToken, generateVerificationLink } from '../config/email.js'
 
 const router = express.Router()
 
@@ -155,14 +156,28 @@ router.post('/signup', async (req, res) => {
 
         // Create university admin (auto-approved)
         console.log('Creating university admin user')
+        
+        // Generate email verification token
+        const verificationToken = generateVerificationToken();
+        const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+        
         const [result] = await pool.query(
-          'INSERT INTO users (name, email, password, role, university_id, approval_status, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())',
-          [displayName, email, password, role, universityId, 'approved', true]
+          'INSERT INTO users (name, email, password, role, university_id, approval_status, is_active, email_verified, email_verification_token, email_verification_expires, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+          [displayName, email, password, role, universityId, 'approved', true, false, verificationToken, verificationExpires]
         )
 
         console.log('University admin created successfully with ID:', result.insertId)
+        
+        // Send verification email
+        const verificationLink = generateVerificationLink(verificationToken);
+        const emailResult = await sendEmail(email, 'verification', [displayName, verificationLink]);
+        
+        if (!emailResult.success) {
+          console.warn('Failed to send verification email:', emailResult.error);
+        }
+        
         return res.status(201).json({
-          message: 'University administrator created successfully',
+          message: 'University administrator created successfully. Please check your email to verify your account.',
           user: {
             id: result.insertId,
             name: displayName,
@@ -226,9 +241,14 @@ router.post('/signup', async (req, res) => {
 
         console.log('University has admin, creating user')
         // Create user with pending approval
+        
+        // Generate email verification token
+        const verificationToken = generateVerificationToken();
+        const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+        
         const [result] = await pool.query(
-          'INSERT INTO users (name, email, password, role, university_id, institute_name, approval_status, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())',
-          [displayName, email, password, role, university_id, institute_name, 'pending', false]
+          'INSERT INTO users (name, email, password, role, university_id, institute_name, approval_status, is_active, email_verified, email_verification_token, email_verification_expires, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+          [displayName, email, password, role, university_id, institute_name, 'pending', false, false, verificationToken, verificationExpires]
         )
 
         console.log('User created with ID:', result.insertId)
@@ -241,8 +261,17 @@ router.post('/signup', async (req, res) => {
         )
 
         console.log('Registration request created successfully')
+        
+        // Send verification email
+        const verificationLink = generateVerificationLink(verificationToken);
+        const emailResult = await sendEmail(email, 'verification', [displayName, verificationLink]);
+        
+        if (!emailResult.success) {
+          console.warn('Failed to send verification email:', emailResult.error);
+        }
+        
         return res.status(201).json({
-          message: 'Registration request submitted successfully. Please wait for university administrator approval.',
+          message: 'Registration request submitted successfully. Please check your email to verify your account, then wait for university administrator approval.',
           user: {
             id: result.insertId,
             name: displayName,
@@ -280,14 +309,27 @@ router.post('/signup', async (req, res) => {
       console.log('Processing ICM role registration:', role)
       // ICM roles (admin, manager, viewer) - auto-approved
       try {
+        // Generate email verification token
+        const verificationToken = generateVerificationToken();
+        const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+        
         const [result] = await pool.query(
-          'INSERT INTO users (name, email, password, role, approval_status, is_active, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())',
-          [displayName, email, password, role, 'approved', true]
+          'INSERT INTO users (name, email, password, role, approval_status, is_active, email_verified, email_verification_token, email_verification_expires, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+          [displayName, email, password, role, 'approved', true, false, verificationToken, verificationExpires]
         )
 
         console.log('ICM user created successfully with ID:', result.insertId)
+        
+        // Send verification email
+        const verificationLink = generateVerificationLink(verificationToken);
+        const emailResult = await sendEmail(email, 'verification', [displayName, verificationLink]);
+        
+        if (!emailResult.success) {
+          console.warn('Failed to send verification email:', emailResult.error);
+        }
+        
         return res.status(201).json({
-          message: 'User created successfully',
+          message: 'User created successfully. Please check your email to verify your account.',
           user: {
             id: result.insertId,
             name: displayName,
@@ -342,7 +384,7 @@ router.post('/login', async (req, res) => {
 
     // Find user by email
     const [users] = await pool.query(
-      'SELECT id, name, email, password, role, approval_status, is_active, university_id, institute_name FROM users WHERE email = ?',
+      'SELECT id, name, email, password, role, approval_status, is_active, university_id, institute_name, email_verified FROM users WHERE email = ?',
       [email]
     )
 
@@ -358,6 +400,14 @@ router.post('/login', async (req, res) => {
 
     if (user.password !== password) {
       return res.status(401).json({ message: 'Invalid email or password' })
+    }
+
+    // Check if email is verified
+    if (!user.email_verified) {
+      return res.status(401).json({ 
+        message: 'Please verify your email before logging in. Check your inbox for a verification link.',
+        requiresVerification: true
+      })
     }
 
     // Check approval status for student and academic_leader roles
@@ -490,6 +540,194 @@ router.put('/profile', async (req, res) => {
     return res.status(500).json({ message: 'Internal server error' })
   }
 })
+
+// Email verification endpoint
+router.get('/verify-email/:token', async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    console.log('=== EMAIL VERIFICATION REQUEST ===');
+    console.log('Token received:', token);
+    console.log('Token length:', token ? token.length : 0);
+
+    if (!token) {
+      return res.status(400).json({ message: 'Verification token is required' });
+    }
+
+    // Find user with this verification token
+    const [users] = await pool.query(
+      'SELECT id, name, email, email_verification_expires, email_verified FROM users WHERE email_verification_token = ?',
+      [token]
+    );
+
+    console.log('Users found with token:', users.length);
+    if (users.length > 0) {
+      console.log('User details:', {
+        id: users[0].id,
+        email: users[0].email,
+        email_verified: users[0].email_verified,
+        expires: users[0].email_verification_expires
+      });
+    }
+
+    if (users.length === 0) {
+      // Try to find user by email from the token (if it's a valid email format)
+      const emailFromToken = token.includes('@') ? token : null;
+
+      if (emailFromToken) {
+        const [emailUsers] = await pool.query(
+          'SELECT id, name, email, email_verified FROM users WHERE email = ?',
+          [emailFromToken]
+        );
+
+        if (emailUsers.length > 0) {
+          const emailUser = emailUsers[0];
+          if (emailUser.email_verified) {
+            return res.status(200).json({
+              message: 'Email already verified! You can sign in to your account.',
+              user: {
+                id: emailUser.id,
+                name: emailUser.name,
+                email: emailUser.email,
+                email_verified: true
+              }
+            });
+          }
+        }
+      }
+
+      console.log('No user found with token, returning invalid token error');
+      return res.status(400).json({ message: 'Invalid verification token' });
+    }
+
+    const user = users[0];
+
+    // If already verified, generate new token and send fresh verification
+    if (user.email_verified) {
+      console.log('User already verified, generating new token');
+      const newVerificationToken = generateVerificationToken();
+      const newVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+      await pool.query(
+        'UPDATE users SET email_verification_token = ?, email_verification_expires = ? WHERE id = ?',
+        [newVerificationToken, newVerificationExpires, user.id]
+      );
+
+      const verificationLink = generateVerificationLink(newVerificationToken);
+      const emailResult = await sendEmail(user.email, 'verification', [user.name, verificationLink]);
+
+      if (!emailResult.success) {
+        console.warn('Failed to send new verification email:', emailResult.error);
+      }
+
+      return res.status(200).json({
+        message: 'New verification email sent! Please check your inbox for the fresh verification link.',
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          email_verified: true
+        }
+      });
+    }
+
+    // Check if token has expired
+    if (new Date() > new Date(user.email_verification_expires)) {
+      console.log('Token expired, returning expired error');
+      return res.status(400).json({ message: 'Verification token has expired. Please request a new one.' });
+    }
+
+    console.log('Token valid, verifying user');
+    // Update user to verified and activate account
+    await pool.query(
+      'UPDATE users SET email_verified = TRUE, is_active = TRUE, email_verification_token = NULL, email_verification_expires = NULL WHERE id = ?',
+      [user.id]
+    );
+
+    // Send welcome email
+    const emailResult = await sendEmail(user.email, 'welcome', [user.name]);
+
+    if (!emailResult.success) {
+      console.warn('Failed to send welcome email:', emailResult.error);
+    }
+
+    return res.status(200).json({
+      message: 'Email verified successfully! You can now sign in to your account.',
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        email_verified: true
+      }
+    });
+
+  } catch (error) {
+    console.error('Email verification error:', error);
+    return res.status(500).json({
+      message: 'Internal server error during email verification',
+      details: error.message
+    });
+  }
+});
+
+// Resend verification email endpoint
+router.post('/resend-verification', async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ message: 'Email is required' });
+    }
+
+    // Find user by email
+    const [users] = await pool.query(
+      'SELECT id, name, email, email_verified, email_verification_token, email_verification_expires FROM users WHERE email = ?',
+      [email]
+    );
+
+    if (users.length === 0) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const user = users[0];
+
+    if (user.email_verified) {
+      return res.status(400).json({ message: 'Email is already verified' });
+    }
+
+    // Generate new verification token
+    const verificationToken = generateVerificationToken();
+    const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    // Update user with new token
+    await pool.query(
+      'UPDATE users SET email_verification_token = ?, email_verification_expires = ? WHERE id = ?',
+      [verificationToken, verificationExpires, user.id]
+    );
+
+    // Send verification email
+    const verificationLink = generateVerificationLink(verificationToken);
+    const emailResult = await sendEmail(user.email, 'verification', [user.name, verificationLink]);
+
+    if (!emailResult.success) {
+      return res.status(500).json({ 
+        message: 'Failed to send verification email',
+        details: emailResult.error
+      });
+    }
+
+    return res.json({ 
+      message: 'Verification email sent successfully. Please check your inbox.' 
+    });
+
+  } catch (error) {
+    console.error('Resend verification error:', error);
+    return res.status(500).json({ 
+      message: 'Internal server error during resend verification',
+      details: error.message
+    });
+  }
+});
 
 export default router
 
