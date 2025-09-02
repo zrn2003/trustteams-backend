@@ -1,5 +1,6 @@
 import express from 'express'
 import pool from '../db.js'
+import { sendApplicationConfirmation, sendApplicationApproved, sendApplicationRejected } from '../config/email.js'
 
 const router = express.Router()
 
@@ -20,7 +21,7 @@ const requireAuth = async (req, res, next) => {
       return res.status(401).json({ error: 'Invalid user' })
     }
     
-    req.user = users[0]
+    req.currentUser = users[0]
     next()
   } catch (error) {
     console.error('Auth middleware error:', error)
@@ -32,7 +33,7 @@ const requireAuth = async (req, res, next) => {
 router.get('/opportunity/:opportunityId', requireAuth, async (req, res) => {
   try {
     const { opportunityId } = req.params
-    const userId = req.user.id
+    const userId = req.currentUser.id
 
     // Verify the opportunity belongs to the academic leader
     const [opportunities] = await pool.query(
@@ -45,7 +46,7 @@ router.get('/opportunity/:opportunityId', requireAuth, async (req, res) => {
     }
 
     const opportunity = opportunities[0]
-    if (opportunity.posted_by !== userId && req.user.role !== 'university_admin') {
+    if (opportunity.posted_by !== userId && req.currentUser.role !== 'university_admin') {
       return res.status(403).json({ error: 'Not authorized to view applications for this opportunity' })
     }
 
@@ -66,20 +67,9 @@ router.get('/opportunity/:opportunityId', requireAuth, async (req, res) => {
         u.id as student_id,
         u.name as student_name,
         u.email as student_email,
-        u.phone as student_phone,
-        u.address as student_address,
-        u.bio as student_bio,
-        u.years_experience,
-        u.highest_degree,
-        u.field_of_study,
-        u.institution,
-        u.completion_year,
-        u.research_papers,
-        u.research_areas,
-        u.publications,
-        u.projects_completed,
-        u.current_projects,
-        u.project_experience
+        u.role as student_role,
+        u.is_active as student_active,
+        u.created_at as student_created_at
       FROM opportunity_applications oa
       JOIN users u ON oa.student_id = u.id
       WHERE oa.opportunity_id = ?
@@ -104,21 +94,21 @@ router.get('/opportunity/:opportunityId', requireAuth, async (req, res) => {
 router.get('/student/:studentId', requireAuth, async (req, res) => {
   try {
     const { studentId } = req.params
-    const userId = req.user.id
+    const userId = req.currentUser.id
 
     // Students can only view their own applications
-    if (req.user.role === 'student' && parseInt(studentId) !== userId) {
+    if (req.currentUser.role === 'student' && parseInt(studentId) !== userId) {
       return res.status(403).json({ error: 'Not authorized to view other students\' applications' })
     }
 
     // Academic leaders can view applications from their university students
-    if (req.user.role === 'academic_leader') {
+    if (req.currentUser.role === 'academic_leader') {
       const [studentCheck] = await pool.query(
         'SELECT university_id FROM users WHERE id = ?',
         [studentId]
       )
       
-      if (studentCheck.length === 0 || studentCheck[0].university_id !== req.user.university_id) {
+      if (studentCheck.length === 0 || studentCheck[0].university_id !== req.currentUser.university_id) {
         return res.status(403).json({ error: 'Not authorized to view this student\'s applications' })
       }
     }
@@ -163,7 +153,7 @@ router.get('/student/:studentId', requireAuth, async (req, res) => {
 // Apply to an opportunity (for students)
 router.post('/apply', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id
+    const userId = req.currentUser.id
     const { 
       opportunityId, 
       coverLetter, 
@@ -175,7 +165,7 @@ router.post('/apply', requireAuth, async (req, res) => {
     } = req.body
 
     // Verify user is a student
-    if (req.user.role !== 'student') {
+    if (req.currentUser.role !== 'student') {
       return res.status(403).json({ error: 'Only students can apply to opportunities' })
     }
 
@@ -219,6 +209,39 @@ router.post('/apply', requireAuth, async (req, res) => {
       relevantCourses, skills, experienceSummary
     ])
 
+    // Get student and opportunity details for email
+    const [studentDetails] = await pool.query(
+      'SELECT name, email FROM users WHERE id = ?',
+      [userId]
+    )
+    
+    const [opportunityDetails] = await pool.query(
+      'SELECT title, posted_by FROM opportunities WHERE id = ?',
+      [opportunityId]
+    )
+    
+    const [postedByDetails] = await pool.query(
+      'SELECT name FROM users WHERE id = ?',
+      [opportunityDetails[0]?.posted_by]
+    )
+
+    // Send confirmation email to student
+    if (studentDetails.length > 0 && opportunityDetails.length > 0) {
+      try {
+        await sendApplicationConfirmation(
+          studentDetails[0].email,
+          studentDetails[0].name,
+          opportunityDetails[0].title,
+          postedByDetails[0]?.name || 'Organization',
+          result.insertId
+        )
+        console.log('Application confirmation email sent successfully');
+      } catch (emailError) {
+        console.error('Failed to send confirmation email:', emailError);
+        // Don't fail the application if email fails
+      }
+    }
+
     res.status(201).json({
       message: 'Application submitted successfully',
       applicationId: result.insertId
@@ -230,76 +253,151 @@ router.post('/apply', requireAuth, async (req, res) => {
   }
 })
 
-// Update application status (for academic leaders)
+// Update application status (for academic leaders and ICM managers)
 router.put('/:applicationId/status', requireAuth, async (req, res) => {
   try {
-    const { applicationId } = req.params
-    const { status, reviewNotes } = req.body
-    const userId = req.user.id
+    const { applicationId } = req.params;
+    const { status, reviewNotes } = req.body;
+    const userId = req.currentUser.id;
+    const userRole = req.currentUser.role;
 
-    // Verify user is academic leader or university admin
-    if (!['academic_leader', 'university_admin'].includes(req.user.role)) {
-      return res.status(403).json({ error: 'Not authorized to update application status' })
+    // Check if user has permission to update application status
+    if (userRole !== 'academic_leader' && userRole !== 'manager') {
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Only academic leaders and ICM managers can update application status' 
+      });
     }
 
-    // Get application with opportunity details
-    const [applications] = await pool.query(`
-      SELECT 
-        oa.id,
-        oa.opportunity_id,
-        oa.student_id,
-        oa.status as current_status,
+    // Get application details
+    const [application] = await pool.query(
+      `SELECT 
+        oa.*, 
+        o.title as opportunity_title, 
         o.posted_by,
-        o.title as opportunity_title
-      FROM opportunity_applications oa
-      JOIN opportunities o ON oa.opportunity_id = o.id
-      WHERE oa.id = ?
-    `, [applicationId])
+        u.name as student_name,
+        u.email as student_email
+       FROM opportunity_applications oa
+       JOIN opportunities o ON oa.opportunity_id = o.id
+       JOIN users u ON oa.student_id = u.id
+       WHERE oa.id = ?`,
+      [applicationId]
+    );
 
-    if (applications.length === 0) {
-      return res.status(404).json({ error: 'Application not found' })
+    if (application.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Application not found' 
+      });
     }
 
-    const application = applications[0]
+    // Check if the user is authorized to update this application
+    // Academic leaders can update applications to opportunities at their university
+    // ICM managers can update applications to their own opportunities
+    if (userRole === 'academic_leader') {
+      const [universityCheck] = await pool.query(
+        `SELECT u.university_id 
+         FROM users u 
+         WHERE u.id = ? AND u.role = 'academic_leader'`,
+        [userId]
+      );
 
-    // Verify authorization
-    if (req.user.role === 'academic_leader' && application.posted_by !== userId) {
-      return res.status(403).json({ error: 'Not authorized to update this application' })
+      if (universityCheck.length === 0) {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Academic leader not associated with any university' 
+        });
+      }
+
+      const [opportunityUniversityCheck] = await pool.query(
+        `SELECT u.university_id 
+         FROM users u 
+         WHERE u.id = ? AND u.role = 'student'`,
+        [application[0].student_id]
+      );
+
+      if (opportunityUniversityCheck.length === 0 || 
+          opportunityUniversityCheck[0].university_id !== universityCheck[0].university_id) {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Can only update applications from students at your university' 
+        });
+      }
+    } else if (userRole === 'manager') {
+      // ICM managers can only update applications to their own opportunities
+      if (application[0].posted_by !== userId) {
+        return res.status(403).json({ 
+          success: false, 
+          message: 'Can only update applications to your own opportunities' 
+        });
+      }
     }
 
-    // Validate status
-    const validStatuses = ['pending', 'approved', 'rejected', 'withdrawn']
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({ error: 'Invalid status' })
+    // Update application status
+    const [result] = await pool.query(
+      `UPDATE opportunity_applications 
+       SET status = ?, review_notes = ?, updated_at = NOW() 
+       WHERE id = ?`,
+      [status, reviewNotes, applicationId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Failed to update application status' 
+      });
     }
 
-    // Update application
-    await pool.query(`
-      UPDATE opportunity_applications 
-      SET status = ?, review_notes = ?, reviewed_by = ?, reviewed_at = NOW()
-      WHERE id = ?
-    `, [status, reviewNotes, userId, applicationId])
+    // Send email notification to student
+    try {
+      if (status === 'approved') {
+        await sendApplicationApproved(
+          application[0].student_email,
+          application[0].student_name,
+          application[0].opportunity_title,
+          req.currentUser.name,
+          reviewNotes
+        );
+        console.log(`Application ${status} email sent successfully to ${application[0].student_email}`);
+      } else if (status === 'rejected') {
+        await sendApplicationRejected(
+          application[0].student_email,
+          application[0].student_name,
+          application[0].opportunity_title,
+          req.currentUser.name,
+          reviewNotes
+        );
+        console.log(`Application ${status} email sent successfully to ${application[0].student_email}`);
+      }
+    } catch (emailError) {
+      console.error('Failed to send status update email:', emailError);
+      // Don't fail the status update if email fails
+    }
 
     res.json({
-      message: 'Application status updated successfully',
-      applicationId,
-      newStatus: status
-    })
+      success: true,
+      message: `Application ${status} successfully`,
+      applicationId: applicationId,
+      status: status
+    });
 
   } catch (error) {
-    console.error('Update application status error:', error)
-    res.status(500).json({ error: 'Failed to update application status' })
+    console.error('Error updating application status:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Failed to update application status' 
+    });
   }
-})
+});
 
 // Withdraw application (for students)
 router.put('/:applicationId/withdraw', requireAuth, async (req, res) => {
   try {
     const { applicationId } = req.params
-    const userId = req.user.id
+    const userId = req.currentUser.id
 
     // Verify user is a student
-    if (req.user.role !== 'student') {
+    if (req.currentUser.role !== 'student') {
       return res.status(403).json({ error: 'Only students can withdraw applications' })
     }
 

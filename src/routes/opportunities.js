@@ -48,7 +48,8 @@ async function getUserRole(userId) {
 async function getAllActiveStudents() {
   try {
     const [students] = await pool.query(
-      'SELECT id, name, email FROM users WHERE role = "student" AND is_active = 1 AND email_verified = 1'
+      'SELECT id, name, email FROM users WHERE role = ? AND is_active = 1 AND email_verified = 1',
+      ['student']
     )
     return students
   } catch (error) {
@@ -159,8 +160,7 @@ router.get('/', async (req, res) => {
       duration: opp.duration,
       location: opp.location,
       status: opp.status,
-      closingDate: opp.closing_date,
-      deadline: opp.closing_date,
+      closing_date: opp.closing_date,
       postedBy: opp.posted_by,
       postedByName: opp.postedByName,
       contact_email: opp.contact_email,
@@ -223,8 +223,8 @@ router.post('/', requireAuth, async (req, res) => {
     const userRole = req.user.role
     
     // Check if user is authorized to post opportunities
-    if (!['academic_leader', 'icm', 'university_admin'].includes(userRole)) {
-      return res.status(403).json({ error: 'Only academic leaders, ICMs, and university admins can post opportunities' })
+    if (!['academic_leader', 'manager', 'university_admin'].includes(userRole)) {
+              return res.status(403).json({ error: 'Only academic leaders, Industrial Managers, and university admins can post opportunities' })
     }
     
     const { 
@@ -277,28 +277,59 @@ router.post('/', requireAuth, async (req, res) => {
 
     // Send notification emails to all students
     try {
-      const students = await getAllActiveStudents()
-      const opportunityLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/opportunities/${result.insertId}`
+      console.log('=== SENDING OPPORTUNITY NOTIFICATIONS ===')
+      console.log('Fetching active students...')
       
-      for (const student of students) {
-        await sendEmail(student.email, 'opportunity', [
-          student.name,
-          req.user.name,
-          title,
-          type,
-          description,
-          requirements || 'Not specified',
-          stipend || 'Not specified',
-          duration || 'Not specified',
-          location || 'Not specified',
-          closingDate ? new Date(closingDate).toLocaleDateString() : 'No deadline',
-          opportunityLink
-        ])
+      const students = await getAllActiveStudents()
+      console.log(`Found ${students.length} active students:`, students.map(s => ({ id: s.id, name: s.name, email: s.email })))
+      
+      if (students.length === 0) {
+        console.log('❌ No active students found to notify')
+        return
       }
       
-      console.log(`Sent opportunity notifications to ${students.length} students`)
+      const opportunityLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/opportunities/${result.insertId}`
+      console.log('Opportunity link:', opportunityLink)
+      
+      let emailsSent = 0
+      let emailsFailed = 0
+      
+      for (const student of students) {
+        try {
+          console.log(`Sending email to student: ${student.name} (${student.email})`)
+          
+          const emailResult = await sendEmail(student.email, 'opportunity', [
+            student.name,
+            req.user.name,
+            title,
+            type,
+            description,
+            requirements || 'Not specified',
+            stipend || 'Not specified',
+            duration || 'Not specified',
+            location || 'Not specified',
+            closingDate ? new Date(closingDate).toLocaleDateString() : 'No deadline',
+            opportunityLink
+          ])
+          
+          if (emailResult.success) {
+            console.log(`✅ Email sent successfully to ${student.email}`)
+            emailsSent++
+          } else {
+            console.log(`❌ Failed to send email to ${student.email}:`, emailResult.error)
+            emailsFailed++
+          }
+        } catch (emailError) {
+          console.error(`❌ Error sending email to ${student.email}:`, emailError)
+          emailsFailed++
+        }
+      }
+      
+      console.log(`📊 Email notification summary: ${emailsSent} sent, ${emailsFailed} failed`)
+      console.log(`Total students notified: ${emailsSent}`)
+      
     } catch (emailError) {
-      console.error('Error sending opportunity notifications:', emailError)
+      console.error('❌ Error in opportunity notification system:', emailError)
       // Don't fail the request if email sending fails
     }
 
@@ -377,8 +408,7 @@ router.get('/:id', async (req, res) => {
       duration: opportunity.duration,
       location: opportunity.location,
       status: opportunity.status,
-      closingDate: opportunity.closing_date,
-      deadline: opportunity.closing_date,
+      closing_date: opportunity.closing_date,
       postedBy: opportunity.posted_by,
       postedByName: opportunity.postedByName,
       contact_email: opportunity.contact_email,
@@ -494,14 +524,15 @@ router.delete('/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Opportunity not found' })
     }
 
-    // Check user permissions for deletion - only admins can delete
+    // Check user permissions for deletion - users can delete their own opportunities, admins can delete any
     const userRole = await getUserRole(userId)
     if (!userRole) {
       return res.status(401).json({ error: 'User not found' })
     }
 
-    if (userRole !== 'admin') {
-      return res.status(403).json({ error: 'Only administrators can delete posts' })
+    // Allow users to delete their own opportunities, or admins to delete any
+    if (userRole !== 'admin' && existing[0].posted_by !== userId) {
+      return res.status(403).json({ error: 'You can only delete your own opportunities' })
     }
 
     // Soft delete

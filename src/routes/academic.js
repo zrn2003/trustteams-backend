@@ -33,7 +33,8 @@ function inferInstituteFromEmail(email) {
 async function getAllActiveStudents() {
   try {
     const [students] = await pool.query(
-      'SELECT id, name, email FROM users WHERE role = "student" AND is_active = 1 AND email_verified = 1'
+      'SELECT id, name, email FROM users WHERE role = ? AND is_active = 1 AND email_verified = 1',
+      ['student']
     )
     return students
   } catch (error) {
@@ -50,9 +51,9 @@ router.get('/students', async (req, res) => {
     const [rows] = await pool.query(
       `SELECT id, name, email, role, created_at
        FROM users
-       WHERE role = 'student' AND SUBSTRING_INDEX(email, '@', -1) = ?
+       WHERE role = ? AND SUBSTRING_INDEX(email, '@', -1) = ?
        ORDER BY created_at DESC`,
-      [myInstitute]
+      ['student', myInstitute]
     )
     return res.json({ students: rows })
   } catch (e) {
@@ -70,8 +71,8 @@ router.delete('/students/:id', async (req, res) => {
     // Verify student exists and belongs to same institute
     const myInstitute = inferInstituteFromEmail(req.currentUser.email)
     const [rows] = await pool.query(
-      `SELECT id, email, role FROM users WHERE id = ? AND role = 'student'`,
-      [studentId]
+      `SELECT id, email, role FROM users WHERE id = ? AND role = ?`,
+      [studentId, 'student']
     )
     if (rows.length === 0) return res.status(404).json({ message: 'Student not found' })
 
@@ -153,13 +154,28 @@ router.post('/:academicId/opportunities', async (req, res) => {
 
     // Send notification emails to all verified students
     try {
+      console.log('=== SENDING OPPORTUNITY NOTIFICATIONS (ACADEMIC ROUTE) ===')
+      console.log('Fetching active students...')
+      
       const students = await getAllActiveStudents()
+      console.log(`Found ${students.length} active students:`, students.map(s => ({ id: s.id, name: s.name, email: s.email })))
+      
+      if (students.length === 0) {
+        console.log('❌ No active students found to notify')
+        return
+      }
+      
       const opportunityLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/opportunities/${opportunityId}`
+      console.log('Opportunity link:', opportunityLink)
       
       let emailsSent = 0
+      let emailsFailed = 0
+      
       for (const student of students) {
         try {
-          await sendEmail(student.email, 'opportunity', [
+          console.log(`Sending email to student: ${student.name} (${student.email})`)
+          
+          const emailResult = await sendEmail(student.email, 'opportunity', [
             student.name,
             req.currentUser.name,
             title,
@@ -172,15 +188,25 @@ router.post('/:academicId/opportunities', async (req, res) => {
             closingDate ? new Date(closingDate).toLocaleDateString() : 'No deadline',
             opportunityLink
           ])
-          emailsSent++
+          
+          if (emailResult.success) {
+            console.log(`✅ Email sent successfully to ${student.email}`)
+            emailsSent++
+          } else {
+            console.log(`❌ Failed to send email to ${student.email}:`, emailResult.error)
+            emailsFailed++
+          }
         } catch (emailError) {
-          console.error(`Failed to send email to ${student.email}:`, emailError)
+          console.error(`❌ Error sending email to ${student.email}:`, emailError)
+          emailsFailed++
         }
       }
       
-      console.log(`Sent opportunity notifications to ${emailsSent} students`)
+      console.log(`📊 Email notification summary: ${emailsSent} sent, ${emailsFailed} failed`)
+      console.log(`Total students notified: ${emailsSent}`)
+      
     } catch (emailError) {
-      console.error('Error sending opportunity notifications:', emailError)
+      console.error('❌ Error in opportunity notification system:', emailError)
       // Don't fail the request if email sending fails
     }
 
@@ -241,8 +267,7 @@ router.get('/:academicId/opportunities', async (req, res) => {
       duration: opp.duration,
       location: opp.location,
       status: opp.status,
-      closingDate: opp.closing_date,
-      deadline: opp.closing_date,
+      closing_date: opp.closing_date,
       postedBy: opp.posted_by,
       postedByName: opp.postedByName,
       contact_email: opp.contact_email,
@@ -255,6 +280,286 @@ router.get('/:academicId/opportunities', async (req, res) => {
   } catch (e) {
     console.error('get academic opportunities error', e)
     return res.status(500).json({ message: 'Failed to get opportunities' })
+  }
+})
+
+// Get academic leader profile
+router.get('/profile', async (req, res) => {
+  try {
+    const userId = req.currentUser.id
+    
+    // Get comprehensive user information including all profile fields
+    const [userRows] = await pool.query(
+      `SELECT id, name, email, role, approval_status, is_active, last_login, created_at, updated_at, 
+               institute_name, phone, address, position, department, bio
+        FROM users WHERE id = ?`,
+      [userId]
+    )
+    
+    if (userRows.length === 0) {
+      return res.status(404).json({ message: 'Profile not found' })
+    }
+    
+    const userProfile = userRows[0]
+    
+    // Get education information
+    const [educationRows] = await pool.query(
+      'SELECT * FROM user_education WHERE user_id = ? ORDER BY start_date DESC',
+      [userId]
+    )
+    
+    // Get project information
+    const [projectRows] = await pool.query(
+      'SELECT * FROM user_projects WHERE user_id = ? ORDER BY start_date DESC',
+      [userId]
+    )
+    
+    // Get skills and research areas
+    const [skillRows] = await pool.query(
+      'SELECT * FROM user_skills WHERE user_id = ? ORDER BY skill_name',
+      [userId]
+    )
+    
+    // Get work experience
+    const [experienceRows] = await pool.query(
+      'SELECT * FROM user_experience WHERE user_id = ? ORDER BY start_date DESC',
+      [userId]
+    )
+    
+    // Return the complete profile with all sections
+    res.json({
+      success: true,
+      profile: {
+        ...userProfile,
+        education: educationRows,
+        projects: projectRows,
+        skills: skillRows,
+        experience: experienceRows
+      }
+    })
+  } catch (error) {
+    console.error('Error fetching academic leader profile:', error)
+    res.status(500).json({ message: 'Failed to fetch profile' })
+  }
+})
+
+// Update academic leader profile
+router.put('/profile', async (req, res) => {
+  try {
+    const userId = req.currentUser.id
+    const { 
+      name, 
+      email, 
+      institute_name,
+      phone,
+      address,
+      position,
+      department,
+      bio,
+      education,
+      projects,
+      skills,
+      experience
+    } = req.body
+    
+    console.log('Updating academic leader profile:', { 
+      userId, 
+      name, 
+      email, 
+      institute_name,
+      phone,
+      address,
+      position,
+      department,
+      bio,
+      educationCount: education?.length || 0,
+      projectsCount: projects?.length || 0,
+      skillsCount: skills?.length || 0,
+      experienceCount: experience?.length || 0
+    })
+    
+    // Validate required fields
+    if (!name || !email) {
+      return res.status(400).json({ message: 'Name and email are required' })
+    }
+    
+    // Check if email is already taken by another user
+    const [existingUsers] = await pool.query(
+      'SELECT id FROM users WHERE email = ? AND id != ?',
+      [email, userId]
+    )
+    
+    if (existingUsers.length > 0) {
+      return res.status(400).json({ message: 'Email is already taken by another user' })
+    }
+    
+    // Start a transaction to update all profile sections
+    const connection = await pool.getConnection()
+    await connection.beginTransaction()
+    
+    try {
+      // Update basic user profile
+      const [userResult] = await connection.query(
+        `UPDATE users 
+         SET name = ?, email = ?, institute_name = ?, phone = ?, address = ?, 
+             position = ?, department = ?, bio = ?, updated_at = NOW()
+         WHERE id = ?`,
+        [
+          name, 
+          email, 
+          institute_name || '', 
+          phone || '', 
+          address || '', 
+          position || '', 
+          department || '', 
+          bio || '', 
+          userId
+        ]
+      )
+      
+      if (userResult.affectedRows === 0) {
+        throw new Error('Profile not found')
+      }
+      
+      // Update education information
+      if (education && Array.isArray(education)) {
+        // Delete existing education records
+        await connection.query('DELETE FROM user_education WHERE user_id = ?', [userId])
+        
+        // Insert new education records
+        for (const edu of education) {
+          if (edu.degree && edu.institution && edu.field_of_study) {
+            await connection.query(
+              `INSERT INTO user_education (user_id, degree, institution, field_of_study, start_date, end_date, grade, description, is_current) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                userId, edu.degree, edu.institution, edu.field_of_study, 
+                edu.start_date || null, edu.end_date || null, edu.grade || null, 
+                edu.description || null, edu.is_current || false
+              ]
+            )
+          }
+        }
+      }
+      
+      // Update project information
+      if (projects && Array.isArray(projects)) {
+        // Delete existing project records
+        await connection.query('DELETE FROM user_projects WHERE user_id = ?', [userId])
+        
+        // Insert new project records
+        for (const proj of projects) {
+          if (proj.project_name && proj.description) {
+            await connection.query(
+              `INSERT INTO user_projects (user_id, project_name, project_type, description, technologies_used, start_date, end_date, is_current, project_url, github_url, achievements) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                userId, proj.project_name, proj.project_type || 'academic', proj.description,
+                proj.technologies_used || null, proj.start_date || null, proj.end_date || null,
+                proj.is_current || false, proj.project_url || null, proj.github_url || null, proj.achievements || null
+              ]
+            )
+          }
+        }
+      }
+      
+      // Update skills and research areas
+      if (skills && Array.isArray(skills)) {
+        // Delete existing skill records
+        await connection.query('DELETE FROM user_skills WHERE user_id = ?', [userId])
+        
+        // Insert new skill records
+        for (const skill of skills) {
+          if (skill.skill_name) {
+            await connection.query(
+              `INSERT INTO user_skills (user_id, skill_name, skill_category, proficiency_level, years_of_experience, description) 
+               VALUES (?, ?, ?, ?, ?, ?)`,
+              [
+                userId, skill.skill_name, skill.skill_category || 'technical', 
+                skill.proficiency_level || 'intermediate', skill.years_of_experience || null, skill.description || null
+              ]
+            )
+          }
+        }
+      }
+      
+      // Update work experience
+      if (experience && Array.isArray(experience)) {
+        // Delete existing experience records
+        await connection.query('DELETE FROM user_experience WHERE user_id = ?', [userId])
+        
+        // Insert new experience records
+        for (const exp of experience) {
+          if (exp.title && exp.company && exp.description) {
+            await connection.query(
+              `INSERT INTO user_experience (user_id, title, company, location, start_date, end_date, is_current, description, achievements) 
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                userId, exp.title, exp.company, exp.location || null, exp.start_date || null, 
+                exp.end_date || null, exp.is_current || false, exp.description, exp.achievements || null
+              ]
+            )
+          }
+        }
+      }
+      
+      // Commit the transaction
+      await connection.commit()
+      
+      console.log('Academic leader profile updated successfully with all sections')
+      
+      // Fetch updated profile with all sections
+      const [updatedUser] = await pool.query(
+        `SELECT id, name, email, role, approval_status, is_active, created_at, updated_at, 
+                 last_login, institute_name, phone, address, position, department, bio
+          FROM users WHERE id = ?`,
+        [userId]
+      )
+      
+      // Get updated education, projects, skills, and experience
+      const [educationRows] = await pool.query(
+        'SELECT * FROM user_education WHERE user_id = ? ORDER BY start_date DESC',
+        [userId]
+      )
+      
+      const [projectRows] = await pool.query(
+        'SELECT * FROM user_projects WHERE user_id = ? ORDER BY start_date DESC',
+        [userId]
+      )
+      
+      const [skillRows] = await pool.query(
+        'SELECT * FROM user_skills WHERE user_id = ? ORDER BY skill_name',
+        [userId]
+      )
+      
+      const [experienceRows] = await pool.query(
+        'SELECT * FROM user_experience WHERE user_id = ? ORDER BY start_date DESC',
+        [userId]
+      )
+      
+      res.json({
+        success: true,
+        message: 'Profile updated successfully',
+        profile: {
+          ...updatedUser[0],
+          education: educationRows,
+          projects: projectRows,
+          skills: skillRows,
+          experience: experienceRows
+        }
+      })
+      
+    } catch (error) {
+      // Rollback on error
+      await connection.rollback()
+      throw error
+    } finally {
+      connection.release()
+    }
+    
+  } catch (error) {
+    console.error('Error updating academic leader profile:', error)
+    res.status(500).json({ message: 'Failed to update profile: ' + error.message })
   }
 })
 

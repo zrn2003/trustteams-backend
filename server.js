@@ -11,6 +11,7 @@ import debugRouter from './src/routes/debug.js'
 import academicRouter from './src/routes/academic.js'
 import universityRouter from './src/routes/university.js'
 import applicationsRouter from './src/routes/applications.js'
+import icmRouter from './src/routes/icm.js'
 
 const app = express()
 
@@ -101,6 +102,7 @@ app.use('/api/student', studentRouter)
 app.use('/api/academic', academicRouter)
 app.use('/api/university', universityRouter)
 app.use('/api/applications', applicationsRouter)
+app.use('/api/icm', icmRouter)
 app.use('/api/debug', debugRouter)
 
 // 404 for API

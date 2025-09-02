@@ -3,21 +3,38 @@ import pool from '../db.js'
 
 const router = express.Router()
 
-// Simple guard: university_admin, admin, or academic_leader (for protected routes)
+// Simple guard: university_admin, admin, academic_leader, or manager (for protected routes)
 const requireAuth = async (req, res, next) => {
   try {
     const userId = req.headers['x-user-id']
-    if (!userId) return res.status(401).json({ message: 'User ID required' })
-    const [rows] = await pool.query('SELECT id, role, email, university_id FROM users WHERE id = ?', [userId])
-    if (rows.length === 0) return res.status(401).json({ message: 'Invalid user' })
-    const me = rows[0]
-    if (me.role !== 'university_admin' && me.role !== 'admin' && me.role !== 'academic_leader') {
-      return res.status(403).json({ message: 'Forbidden' })
+    console.log('🔐 requireAuth called for user ID:', userId)
+    
+    if (!userId) {
+      console.log('❌ No user ID provided')
+      return res.status(401).json({ message: 'User ID required' })
     }
+    
+    const [rows] = await pool.query('SELECT id, role, email, university_id FROM users WHERE id = ?', [userId])
+    console.log('🔍 Database query result:', { userId, rowsFound: rows.length, userData: rows[0] })
+    
+    if (rows.length === 0) {
+      console.log('❌ User not found in database')
+      return res.status(401).json({ message: 'Invalid user' })
+    }
+    
+    const me = rows[0]
+    console.log('✅ User found:', { id: me.id, role: me.role, email: me.email })
+    
+    if (me.role !== 'university_admin' && me.role !== 'admin' && me.role !== 'academic_leader' && me.role !== 'manager') {
+      console.log('❌ User role not allowed:', me.role)
+      return res.status(403).json({ message: 'Forbidden - Role not allowed' })
+    }
+    
+    console.log('✅ User authorized, role:', me.role)
     req.currentUser = me
     next()
   } catch (e) {
-    console.error('university auth error', e)
+    console.error('❌ university auth error', e)
     return res.status(500).json({ message: 'Server error' })
   }
 }
@@ -160,9 +177,9 @@ router.get('/students', async (req, res) => {
         rr.institute_name
       FROM users u
       LEFT JOIN registration_requests rr ON u.id = rr.user_id
-      WHERE u.university_id = ? AND u.role = 'student'
+      WHERE u.university_id = ? AND u.role = ?
       ORDER BY u.created_at DESC`,
-      [universityId]
+      [universityId, 'student']
     )
     
     // Get academic leaders for this university
@@ -175,9 +192,9 @@ router.get('/students', async (req, res) => {
         rr.institute_name
       FROM users u
       LEFT JOIN registration_requests rr ON u.id = rr.user_id
-      WHERE u.university_id = ? AND u.role = 'academic_leader'
+      WHERE u.university_id = ? AND u.role = ?
       ORDER BY u.created_at DESC`,
-      [universityId]
+      [universityId, 'academic_leader']
     )
     
     return res.json({ 
@@ -395,8 +412,8 @@ router.post('/universities', async (req, res) => {
     
     // Check if user is admin
     const [users] = await pool.query(
-      'SELECT role FROM users WHERE id = ? AND role = "admin"',
-      [userId]
+      'SELECT role FROM users WHERE id = ? AND role = ?',
+      [userId, 'admin']
     )
     
     if (users.length === 0) {
@@ -624,10 +641,21 @@ router.get('/universities/:universityId/stats', async (req, res) => {
 // Get user profile
 router.get('/users/:userId/profile', requireAuth, async (req, res) => {
   try {
+    console.log('📋 GET profile called for user ID:', req.params.userId)
+    console.log('👤 Current user from requireAuth:', req.currentUser)
+    
     const { userId } = req.params
     const currentUser = req.currentUser
     
-    console.log('Getting user profile:', { userId, currentUserId: currentUser.id, currentUserRole: currentUser.role })
+    console.log('Getting user profile:', { 
+      userId, 
+      currentUserId: currentUser.id, 
+      currentUserRole: currentUser.role,
+      userIdType: typeof userId,
+      currentUserIdType: typeof currentUser.id,
+      userIdParsed: parseInt(userId),
+      isEqual: currentUser.id === parseInt(userId)
+    })
     
     // Get basic user information from users table
     const [userRows] = await pool.query(
@@ -642,6 +670,14 @@ router.get('/users/:userId/profile', requireAuth, async (req, res) => {
     const user = userRows[0]
     
     // Authorization check: Users can view their own profile, university admins can view users from their university
+    console.log('Authorization check:', {
+      currentUserId: currentUser.id,
+      targetUserId: userId,
+      currentUserRole: currentUser.role,
+      isOwnProfile: currentUser.id === parseInt(userId),
+      userIdFromHeader: req.headers['x-user-id']
+    })
+    
     if (currentUser.id === parseInt(userId)) {
       console.log('User viewing own profile - authorized')
     } else if (currentUser.role === 'university_admin') {
@@ -658,8 +694,16 @@ router.get('/users/:userId/profile', requireAuth, async (req, res) => {
         })
         return res.status(403).json({ message: 'Unauthorized to view this user profile' })
       }
+    } else if (currentUser.role === 'icm') {
+      // ICM users can view their own profile
+      if (currentUser.id === parseInt(userId)) {
+        console.log('ICM user viewing own profile - authorized')
+      } else {
+        console.log('ICM user attempting to view other user profile - unauthorized')
+        return res.status(403).json({ message: 'ICM users can only view their own profile' })
+      }
     } else {
-      console.log('Unauthorized access attempt - user not viewing own profile and not university admin')
+      console.log('Unauthorized access attempt - user not viewing own profile and not university admin or ICM')
       return res.status(403).json({ message: 'Unauthorized to view this user profile' })
     }
     
@@ -844,41 +888,52 @@ router.get('/users/:userId/profile', requireAuth, async (req, res) => {
 // Update user profile
 router.put('/users/:userId/profile', requireAuth, async (req, res) => {
   try {
+    console.log('📝 PUT profile called for user ID:', req.params.userId)
+    console.log('👤 Current user from requireAuth:', req.currentUser)
+    
     const { userId } = req.params
-    const { 
-      name, email, phone, address, position, department, bio,
-      years_experience, highest_degree, field_of_study, institution, completion_year,
-      research_papers, research_areas, publications, projects_completed, current_projects, project_experience
-    } = req.body
+    const currentUser = req.currentUser
     
     console.log('Updating user profile:', { 
-      userId, name, email, phone, address, position, department, bio,
-      years_experience, highest_degree, field_of_study, institution, completion_year,
-      research_papers, research_areas, publications, projects_completed, current_projects, project_experience
+      userId, 
+      currentUserId: currentUser.id, 
+      currentUserRole: currentUser.role,
+      userIdType: typeof userId,
+      currentUserIdType: typeof currentUser.id,
+      userIdParsed: parseInt(userId),
+      isEqual: currentUser.id === parseInt(userId),
+      name: req.body.name, 
+      email: req.body.email
     })
     
-    // Update user basic information with new academic fields
+    // Authorization check: Users can only update their own profile
+    if (currentUser.id !== parseInt(userId)) {
+      console.log('Unauthorized profile update attempt:', { 
+        currentUserId: currentUser.id, 
+        targetUserId: userId 
+      })
+      return res.status(403).json({ message: 'You can only update your own profile' })
+    }
+    
+    const { 
+      name, email
+    } = req.body
+    
+    // Update user basic information (only fields that exist in the database)
     const [result] = await pool.query(
       `UPDATE users 
-       SET name = ?, email = ?, phone = ?, address = ?, position = ?, department = ?, bio = ?, 
-           years_experience = ?, highest_degree = ?, field_of_study = ?, institution = ?, completion_year = ?,
-           research_papers = ?, research_areas = ?, publications = ?, projects_completed = ?, 
-           current_projects = ?, project_experience = ?, updated_at = NOW()
+       SET name = ?, email = ?, updated_at = NOW()
        WHERE id = ?`,
-      [name, email, phone, address, position, department, bio,
-       years_experience, highest_degree, field_of_study, institution, completion_year,
-       research_papers, research_areas, publications, projects_completed, current_projects, project_experience, userId]
+      [name, email, userId]
     )
     
     if (result.affectedRows === 0) {
       return res.status(404).json({ message: 'User not found' })
     }
     
-    // Fetch updated profile with all fields
+    // Fetch updated profile with existing fields
     const [updatedUser] = await pool.query(
-      `SELECT id, name, email, phone, address, position, department, bio, role, university_id, created_at, updated_at,
-              years_experience, highest_degree, field_of_study, institution, completion_year,
-              research_papers, research_areas, publications, projects_completed, current_projects, project_experience
+      `SELECT id, name, email, role, university_id, approval_status, is_active, created_at, updated_at, last_login, institute_name
        FROM users WHERE id = ?`,
       [userId]
     )

@@ -98,7 +98,98 @@ const emailTemplates = {
             <div style="text-align: center; margin-top: 40px; padding-top: 30px; border-top: 1px solid #e2e8f0;">
               <p style="color: #718096; font-size: 14px; margin: 0 0 8px 0;">Best regards,</p>
               <p style="color: #667eea; font-size: 16px; font-weight: 600; margin: 0;">The TrustTeams Team</p>
-              <p style="color: #a0aec0; font-size: 12px; margin: 16px 0 0 0;">© 2024 TrustTeams. All rights reserved.</p>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `
+  }),
+
+  applicationConfirmation: (studentName, opportunityTitle, organizationName, applicationId) => ({
+    subject: `Application Submitted Successfully - ${opportunityTitle}`,
+    html: `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Application Submitted - TrustTeams</title>
+      </head>
+      <body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+        <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);">
+          
+          <!-- Header with TrustTeams branding -->
+          <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 40px 30px; text-align: center;">
+            <div style="display: inline-flex; align-items: center; gap: 12px; margin-bottom: 20px;">
+              <div style="width: 48px; height: 48px; background: rgba(255, 255, 255, 0.2); border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+                <span style="font-size: 24px; color: white;">✅</span>
+              </div>
+              <span style="font-size: 28px; font-weight: 800; color: white;">TrustTeams</span>
+            </div>
+            <h1 style="color: white; font-size: 32px; font-weight: 700; margin: 0;">Application Submitted!</h1>
+            <p style="color: rgba(255, 255, 255, 0.9); font-size: 16px; margin: 16px 0 0 0;">Your opportunity application has been received</p>
+          </div>
+          
+          <!-- Main Content -->
+          <div style="padding: 40px 30px;">
+            <h2 style="color: #1a202c; font-size: 24px; font-weight: 600; margin: 0 0 20px 0;">Application Confirmation</h2>
+            
+            <p style="color: #4a5568; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">Hi <strong>${studentName}</strong>,</p>
+            
+            <p style="color: #4a5568; font-size: 16px; line-height: 1.6; margin: 0 0 30px 0;">
+              Great news! Your application has been successfully submitted. Here are the details:
+            </p>
+            
+            <!-- Application Details -->
+            <div style="background: #f7fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; margin: 30px 0;">
+              <h3 style="color: #1a202c; font-size: 18px; font-weight: 600; margin: 0 0 16px 0;">📋 Application Details</h3>
+              
+              <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                <span style="color: #6b7280; font-size: 14px; min-width: 80px;">🎯 Position:</span>
+                <span style="color: #1a202c; font-size: 14px; font-weight: 500;">${opportunityTitle}</span>
+              </div>
+              
+              <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                <span style="color: #6b7280; font-size: 14px; min-width: 80px;">🏢 Organization:</span>
+                <span style="color: #1a202c; font-size: 14px; font-weight: 500;">${organizationName}</span>
+              </div>
+              
+              <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                <span style="color: #6b7280; font-size: 14px; min-width: 80px;">🆔 Application ID:</span>
+                <span style="color: #1a202c; font-size: 14px; font-weight: 500;">#${applicationId}</span>
+              </div>
+              
+              <div style="display: flex; align-items: center; margin-bottom: 0;">
+                <span style="color: #6b7280; font-size: 14px; min-width: 80px;">📅 Submitted:</span>
+                <span style="color: #1a202c; font-size: 14px; font-weight: 500;">${new Date().toLocaleDateString()}</span>
+              </div>
+            </div>
+            
+            <!-- Next Steps -->
+            <div style="background: rgba(16, 185, 129, 0.05); border-left: 4px solid #10b981; padding: 20px; margin: 30px 0;">
+              <h3 style="color: #10b981; font-size: 16px; font-weight: 600; margin: 0 0 12px 0;">📝 What Happens Next?</h3>
+              <ul style="color: #4a5568; font-size: 14px; line-height: 1.6; margin: 0; padding-left: 20px;">
+                <li>Your application is now under review by the organization</li>
+                <li>You'll receive updates on your application status</li>
+                <li>Check your TrustTeams dashboard for real-time updates</li>
+                <li>You can track all your applications in the "Applied" tab</li>
+              </ul>
+            </div>
+            
+            <!-- Dashboard Link -->
+            <div style="text-align: center; margin: 40px 0;">
+              <a href="${process.env.FRONTEND_URL || 'https://trustteams-frontend.vercel.app'}/dashboard" 
+                 style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 18px 36px; text-decoration: none; border-radius: 12px; display: inline-block; font-weight: 600; font-size: 16px; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4); transition: all 0.3s ease;">
+                📊 View My Dashboard
+              </a>
+            </div>
+            
+            <!-- Footer -->
+            <div style="text-align: center; margin-top: 40px; padding-top: 30px; border-top: 1px solid #e2e8f0;">
+              <p style="color: #718096; font-size: 14px; margin: 0 0 8px 0;">Best regards,</p>
+              <p style="color: #10b981; font-size: 16px; font-weight: 600; margin: 0;">The TrustTeams Team</p>
+              <p style="color: #9ca3af; font-size: 12px; margin: 8px 0 0 0;">Good luck with your application! 🍀</p>
             </div>
           </div>
         </div>
@@ -349,7 +440,199 @@ const emailTemplates = {
       </body>
       </html>
     `
-  })
+  }),
+
+  // Application status update templates
+  applicationApproved: (studentName, opportunityTitle, reviewerName, reviewNotes) => ({
+    subject: `🎉 Application Approved - ${opportunityTitle}`,
+    html: `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Application Approved - TrustTeams</title>
+      </head>
+      <body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+        <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);">
+          
+          <!-- Header with TrustTeams branding -->
+          <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 40px 30px; text-align: center;">
+            <div style="display: inline-flex; align-items: center; gap: 12px; margin-bottom: 20px;">
+              <div style="width: 48px; height: 48px; background: rgba(255, 255, 255, 0.2); border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+                <span style="font-size: 24px; color: white;">🎉</span>
+              </div>
+              <span style="font-size: 28px; font-weight: 800; color: white;">TrustTeams</span>
+            </div>
+            <h1 style="color: white; font-size: 32px; font-weight: 700; margin: 0;">Application Approved!</h1>
+            <p style="color: rgba(255, 255, 255, 0.9); font-size: 16px; margin: 16px 0 0 0;">Congratulations on your successful application</p>
+          </div>
+          
+          <!-- Main Content -->
+          <div style="padding: 40px 30px;">
+            <h2 style="color: #1a202c; font-size: 24px; font-weight: 600; margin: 0 0 20px 0;">Congratulations!</h2>
+            
+            <p style="color: #4a5568; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">Hi <strong>${studentName}</strong>,</p>
+            
+            <p style="color: #4a5568; font-size: 16px; line-height: 1.6; margin: 0 0 30px 0;">
+              Great news! Your application has been approved. Here are the details:
+            </p>
+            
+            <!-- Application Details -->
+            <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 24px; margin: 30px 0;">
+              <h3 style="color: #166534; font-size: 18px; font-weight: 600; margin: 0 0 16px 0;">✅ Application Details</h3>
+              
+              <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                <span style="color: #6b7280; font-size: 14px; min-width: 80px;">🎯 Position:</span>
+                <span style="color: #1a202c; font-size: 14px; font-weight: 500;">${opportunityTitle}</span>
+              </div>
+              
+              <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                <span style="color: #6b7280; font-size: 14px; min-width: 80px;">👤 Reviewer:</span>
+                <span style="color: #1a202c; font-size: 14px; font-weight: 500;">${reviewerName}</span>
+              </div>
+              
+              <div style="display: flex; align-items: center; margin-bottom: 0;">
+                <span style="color: #6b7280; font-size: 14px; min-width: 80px;">📅 Status:</span>
+                <span style="color: #166534; font-size: 14px; font-weight: 600;">APPROVED</span>
+              </div>
+            </div>
+            
+            ${reviewNotes ? `
+            <!-- Review Notes -->
+            <div style="background: #fef3c7; border: 1px solid #fde68a; border-radius: 12px; padding: 20px; margin: 30px 0;">
+              <h3 style="color: #92400e; font-size: 16px; font-weight: 600; margin: 0 0 12px 0;">📝 Review Notes</h3>
+              <p style="color: #92400e; font-size: 14px; line-height: 1.6; margin: 0;">${reviewNotes}</p>
+            </div>
+            ` : ''}
+            
+            <!-- Next Steps -->
+            <div style="background: rgba(16, 185, 129, 0.05); border-left: 4px solid #10b981; padding: 20px; margin: 30px 0;">
+              <h3 style="color: #10b981; font-size: 16px; font-weight: 600; margin: 0 0 12px 0;">🚀 What Happens Next?</h3>
+              <ul style="color: #4a5568; font-size: 14px; line-height: 1.6; margin: 0; padding-left: 20px;">
+                <li>You'll receive further instructions from the organization</li>
+                <li>Prepare for the next steps in the selection process</li>
+                <li>Check your TrustTeams dashboard for updates</li>
+                <li>Stay in touch with the organization for next steps</li>
+              </ul>
+            </div>
+            
+            <!-- Dashboard Link -->
+            <div style="text-align: center; margin: 40px 0;">
+              <a href="${process.env.FRONTEND_URL || 'https://trustteams-frontend.vercel.app'}/dashboard" 
+                 style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 18px 36px; text-decoration: none; border-radius: 12px; display: inline-block; font-weight: 600; font-size: 16px; box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4); transition: all 0.3s ease;">
+                📊 View My Dashboard
+              </a>
+            </div>
+            
+            <!-- Footer -->
+            <div style="text-align: center; margin-top: 40px; padding-top: 30px; border-top: 1px solid #e2e8f0;">
+              <p style="color: #718096; font-size: 14px; margin: 0 0 8px 0;">Best regards,</p>
+              <p style="color: #10b981; font-size: 16px; font-weight: 600; margin: 0;">The TrustTeams Team</p>
+              <p style="color: #9ca3af; font-size: 12px; margin: 8px 0 0 0;">Good luck with your next steps! 🚀</p>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `
+  }),
+
+  applicationRejected: (studentName, opportunityTitle, reviewerName, reviewNotes) => ({
+    subject: `Application Update - ${opportunityTitle}`,
+    html: `
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Application Update - TrustTeams</title>
+      </head>
+      <body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
+        <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);">
+          
+          <!-- Header with TrustTeams branding -->
+          <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); padding: 40px 30px; text-align: center;">
+            <div style="display: inline-flex; align-items: center; gap: 12px; margin-bottom: 20px;">
+              <div style="width: 48px; height: 48px; background: rgba(255, 255, 255, 0.2); border-radius: 12px; display: flex; align-items: center; justify-content: center;">
+                <span style="font-size: 24px; color: white;">📋</span>
+              </div>
+              <span style="font-size: 28px; font-weight: 800; color: white;">TrustTeams</span>
+            </div>
+            <h1 style="color: white; font-size: 32px; font-weight: 700; margin: 0;">Application Update</h1>
+            <p style="color: rgba(255, 255, 255, 0.9); font-size: 16px; margin: 16px 0 0 0;">Important information about your application</p>
+          </div>
+          
+          <!-- Main Content -->
+          <div style="padding: 40px 30px;">
+            <h2 style="color: #1a202c; font-size: 24px; font-weight: 600; margin: 0 0 20px 0;">Application Status Update</h2>
+            
+            <p style="color: #4a5568; font-size: 16px; line-height: 1.6; margin: 0 0 20px 0;">Hi <strong>${studentName}</strong>,</p>
+            
+            <p style="color: #4a5568; font-size: 16px; line-height: 1.6; margin: 0 0 30px 0;">
+              We wanted to inform you about an update regarding your application. Here are the details:
+            </p>
+            
+            <!-- Application Details -->
+            <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 24px; margin: 30px 0;">
+              <h3 style="color: #dc2626; font-size: 18px; font-weight: 600; margin: 0 0 16px 0;">📋 Application Details</h3>
+              
+              <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                <span style="color: #6b7280; font-size: 14px; min-width: 80px;">🎯 Position:</span>
+                <span style="color: #1a202c; font-size: 14px; font-weight: 500;">${opportunityTitle}</span>
+              </div>
+              
+              <div style="display: flex; align-items: center; margin-bottom: 12px;">
+                <span style="color: #6b7280; font-size: 14px; min-width: 80px;">👤 Reviewer:</span>
+                <span style="color: #1a202c; font-size: 14px; font-weight: 500;">${reviewerName}</span>
+              </div>
+              
+              <div style="display: flex; align-items: center; margin-bottom: 0;">
+                <span style="color: #6b7280; font-size: 14px; min-width: 80px;">📅 Status:</span>
+                <span style="color: #dc2626; font-size: 14px; font-weight: 600;">NOT SELECTED</span>
+              </div>
+            </div>
+            
+            ${reviewNotes ? `
+            <!-- Review Notes -->
+            <div style="background: #fef3c7; border: 1px solid #fde68a; border-radius: 12px; padding: 20px; margin: 30px 0;">
+              <h3 style="color: #92400e; font-size: 16px; font-weight: 600; margin: 0 0 12px 0;">📝 Feedback</h3>
+              <p style="color: #92400e; font-size: 14px; line-height: 1.6; margin: 0;">${reviewNotes}</p>
+            </div>
+            ` : ''}
+            
+            <!-- Encouragement -->
+            <div style="background: rgba(59, 130, 246, 0.05); border-left: 4px solid #3b82f6; padding: 20px; margin: 30px 0;">
+              <h3 style="color: #3b82f6; font-size: 16px; font-weight: 600; margin: 0 0 12px 0;">💪 Keep Going!</h3>
+              <ul style="color: #4a5568; font-size: 14px; line-height: 1.6; margin: 0; padding-left: 20px;">
+                <li>This is not the end of your journey</li>
+                <li>Use this feedback to improve future applications</li>
+                <li>Continue exploring other opportunities on TrustTeams</li>
+                <li>Stay positive and keep building your skills</li>
+              </ul>
+            </div>
+            
+            <!-- Dashboard Link -->
+            <div style="text-align: center; margin: 40px 0;">
+              <a href="${process.env.FRONTEND_URL || 'https://trustteams-frontend.vercel.app'}/dashboard" 
+                 style="background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; padding: 18px 36px; text-decoration: none; border-radius: 12px; display: inline-block; font-weight: 600; font-size: 16px; box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4); transition: all 0.3s ease;">
+                🔍 Explore More Opportunities
+              </a>
+            </div>
+            
+            <!-- Footer -->
+            <div style="text-align: center; margin-top: 40px; padding-top: 30px; border-top: 1px solid #e2e8f0;">
+              <p style="color: #718096; font-size: 14px; margin: 0 0 8px 0;">Best regards,</p>
+              <p style="color: #3b82f6; font-size: 16px; font-weight: 600; margin: 0;">The TrustTeams Team</p>
+              <p style="color: #9ca3af; font-size: 12px; margin: 8px 0 0 0;">Your next opportunity is waiting! 🌟</p>
+            </div>
+          </div>
+        </div>
+      </body>
+      </html>
+    `
+  }),
+
 };
 
 // Main email sending function
@@ -430,6 +713,51 @@ export const sendEmail = async (to, template, data) => {
         };
         break;
         
+      case 'applicationConfirmation':
+        emailTemplate = emailTemplates.applicationConfirmation(
+          data[0], // studentName
+          data[1], // opportunityTitle
+          data[2], // organizationName
+          data[3]  // applicationId
+        );
+        mailOptions = {
+          from: `"TrustTeams" <${process.env.EMAIL_USER}>`,
+          to: to,
+          subject: emailTemplate.subject,
+          html: emailTemplate.html
+        };
+        break;
+        
+      case 'applicationApproved':
+        emailTemplate = emailTemplates.applicationApproved(
+          data[0], // studentName
+          data[1], // opportunityTitle
+          data[2], // reviewerName
+          data[3]  // reviewNotes
+        );
+        mailOptions = {
+          from: `"TrustTeams" <${process.env.EMAIL_USER}>`,
+          to: to,
+          subject: emailTemplate.subject,
+          html: emailTemplate.html
+        };
+        break;
+
+      case 'applicationRejected':
+        emailTemplate = emailTemplates.applicationRejected(
+          data[0], // studentName
+          data[1], // opportunityTitle
+          data[2], // reviewerName
+          data[3]  // reviewNotes
+        );
+        mailOptions = {
+          from: `"TrustTeams" <${process.env.EMAIL_USER}>`,
+          to: to,
+          subject: emailTemplate.subject,
+          html: emailTemplate.html
+        };
+        break;
+        
       default:
         return {
           success: false,
@@ -495,4 +823,35 @@ export const generateVerificationToken = () => {
 export const generateVerificationLink = (token) => {
   const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
   return `${baseUrl}/verify-email/${token}`;
+};
+
+// Export the application confirmation function
+export const sendApplicationConfirmation = async (studentEmail, studentName, opportunityTitle, organizationName, applicationId) => {
+  try {
+    const template = emailTemplates.applicationConfirmation(studentName, opportunityTitle, organizationName, applicationId);
+    return await sendEmail(studentEmail, 'applicationConfirmation', [studentName, opportunityTitle, organizationName, applicationId]);
+  } catch (error) {
+    console.error('Failed to send application confirmation email:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// Export the application approved function
+export const sendApplicationApproved = async (studentEmail, studentName, opportunityTitle, reviewerName, reviewNotes) => {
+  try {
+    return await sendEmail(studentEmail, 'applicationApproved', [studentName, opportunityTitle, reviewerName, reviewNotes]);
+  } catch (error) {
+    console.error('Failed to send application approved email:', error);
+    return { success: false, error: error.message };
+  }
+};
+
+// Export the application rejected function
+export const sendApplicationRejected = async (studentEmail, studentName, opportunityTitle, reviewerName, reviewNotes) => {
+  try {
+    return await sendEmail(studentEmail, 'applicationRejected', [studentName, opportunityTitle, reviewerName, reviewNotes]);
+  } catch (error) {
+    console.error('Failed to send application rejected email:', error);
+    return { success: false, error: error.message };
+  }
 };
