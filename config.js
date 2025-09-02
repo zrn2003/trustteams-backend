@@ -1,9 +1,15 @@
 // Email Configuration
 export const emailConfig = {
-  EMAIL_USER: process.env.EMAIL_USER || 'your-email@gmail.com',
-  EMAIL_PASS: process.env.EMAIL_PASS || 'your-app-password',
-  FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:5173'
+  EMAIL_USER: process.env.EMAIL_USER || '',
+  EMAIL_PASS: process.env.EMAIL_PASS || '',
+  FRONTEND_URL: process.env.FRONTEND_URL || 'https://trustteams-frontend.vercel.app'
 };
+
+// Validate email configuration
+if (!emailConfig.EMAIL_USER || !emailConfig.EMAIL_PASS) {
+  console.warn('⚠️ Email configuration incomplete. Set EMAIL_USER and EMAIL_PASS environment variables.');
+  console.warn('📧 Email verification will not work without proper configuration.');
+}
 
 // Database Configuration
 export const dbConfig = {
@@ -20,5 +26,5 @@ export const serverConfig = {
   NODE_ENV: 'development',
   JWT_SECRET: 'your-secret-key',
   JWT_EXPIRES_IN: '24h',
-  CORS_ORIGIN: 'http://localhost:5173'
+  CORS_ORIGIN: 'https://trustteams-frontend.vercel.app'
 };
