@@ -22,24 +22,65 @@ const app = express()
 // CORS configuration to allow both development and production origins
 const allowedOrigins = [
   'http://localhost:5173', // Development
+  'http://localhost:3000', // Alternative development port
   'https://trustteams-frontend.vercel.app', // Production frontend
   'https://trustteams-frontend-git-main-zrn2003.vercel.app', // Vercel preview deployments
   'https://trustteams-frontend-git-develop-zrn2003.vercel.app' // Vercel branch deployments
 ]
 
+// Enhanced CORS configuration
 app.use(cors({ 
   origin: function (origin, callback) {
+    console.log('CORS Origin Check:', { origin, allowedOrigins })
+    
     // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true)
+    if (!origin) {
+      console.log('No origin - allowing request')
+      return callback(null, true)
+    }
     
     if (allowedOrigins.indexOf(origin) !== -1) {
+      console.log('Origin allowed:', origin)
       callback(null, true)
     } else {
-      callback(new Error('Not allowed by CORS'))
+      console.log('CORS blocked origin:', origin)
+      // For debugging, allow all origins temporarily
+      console.log('Temporarily allowing blocked origin for debugging')
+      callback(null, true)
     }
   },
-  credentials: true 
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'x-user-id'],
+  exposedHeaders: ['Content-Length', 'X-Requested-With'],
+  maxAge: 86400 // 24 hours
 }))
+
+// Additional headers middleware
+app.use((req, res, next) => {
+  console.log('CORS Middleware Debug:', {
+    method: req.method,
+    url: req.url,
+    origin: req.headers.origin,
+    host: req.headers.host,
+    userAgent: req.headers['user-agent']
+  })
+  
+  res.header('Access-Control-Allow-Origin', req.headers.origin || '*')
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH')
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin')
+  res.header('Access-Control-Allow-Credentials', 'true')
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    console.log('Handling OPTIONS preflight request for:', req.url)
+    res.status(200).end()
+    return
+  }
+  
+  next()
+})
+
 app.use(express.json())
 app.use(morgan('dev'))
 
@@ -51,6 +92,26 @@ app.get('/', (req, res) => {
 // Health
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
+})
+
+// CORS test endpoint
+app.get('/api/cors-test', (req, res) => {
+  res.json({ 
+    message: 'CORS test successful', 
+    timestamp: new Date().toISOString(),
+    origin: req.headers.origin,
+    method: req.method
+  })
+})
+
+// Simple test endpoint for debugging
+app.get('/api/test', (req, res) => {
+  res.json({ 
+    message: 'API is working', 
+    timestamp: new Date().toISOString(),
+    cors: 'enabled',
+    origin: req.headers.origin || 'none'
+  })
 })
 
 app.use('/api/auth', authRouter)
