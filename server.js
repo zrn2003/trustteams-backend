@@ -18,30 +18,17 @@ import applicationsRouter from './src/routes/applications.js'
 
 const app = express()
 
-// Vercel-specific CORS middleware
-const allowedOrigins = [
-  'https://trustteams-frontend.vercel.app', // Production frontend
-  'http://localhost:5173', // Development
-  'http://localhost:3000' // Alternative development
-]
-
+// Bulletproof CORS solution for Vercel
 app.use((req, res, next) => {
-  const origin = req.headers.origin
-  
-  // Set CORS headers for Vercel
-  if (origin && allowedOrigins.includes(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin)
-  } else {
-    res.setHeader('Access-Control-Allow-Origin', 'https://trustteams-frontend.vercel.app')
-  }
-  
-  res.setHeader('Access-Control-Allow-Credentials', 'true')
+  // Always set CORS headers for every request
+  res.setHeader('Access-Control-Allow-Origin', 'https://trustteams-frontend.vercel.app')
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, x-user-id')
+  res.setHeader('Access-Control-Allow-Credentials', 'true')
   
-  // Handle preflight requests
+  // Handle preflight requests immediately
   if (req.method === 'OPTIONS') {
-    console.log('Handling OPTIONS preflight request for:', req.url)
+    console.log('OPTIONS preflight handled for:', req.url)
     res.status(200).end()
     return
   }
@@ -55,7 +42,7 @@ app.use(morgan('dev'))
 
 // Test endpoints first
 app.get('/', (req, res) => {
-  res.json({ service: 'trustteams-api', status: 'ok', version: '1.0.2' })
+  res.json({ service: 'trustteams-api', status: 'ok', version: '1.0.3' })
 })
 
 app.get('/api/health', (req, res) => {
@@ -67,6 +54,30 @@ app.get('/api/cors-test', (req, res) => {
     message: 'CORS test successful', 
     timestamp: new Date().toISOString(),
     origin: req.headers.origin,
+    method: req.method
+  })
+})
+
+// Simple test endpoint for debugging
+app.get('/api/test', (req, res) => {
+  res.json({ 
+    message: 'API is working', 
+    timestamp: new Date().toISOString(),
+    cors: 'enabled',
+    origin: req.headers.origin || 'none'
+  })
+})
+
+// Test OPTIONS endpoint specifically
+app.options('/api/test-options', (req, res) => {
+  console.log('🔍 OPTIONS request received for /api/test-options')
+  res.status(200).end()
+})
+
+app.get('/api/test-options', (req, res) => {
+  res.json({ 
+    message: 'OPTIONS test successful', 
+    timestamp: new Date().toISOString(),
     method: req.method
   })
 })
@@ -88,8 +99,26 @@ app.use('/api', (req, res) => {
 // Basic error handler
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  console.error('Error occurred:', err)
-  res.status(500).json({ message: 'Server error', details: err.message })
+  console.error('🚨 Error occurred:', err)
+  console.error('📋 Request details:', {
+    method: req.method,
+    url: req.url,
+    headers: req.headers,
+    body: req.body
+  })
+  
+  // Ensure CORS headers are set even on errors
+  res.setHeader('Access-Control-Allow-Origin', 'https://trustteams-frontend.vercel.app')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, x-user-id')
+  res.setHeader('Access-Control-Allow-Credentials', 'true')
+  
+  // Send appropriate error response
+  if (err.message && err.message.includes('CORS')) {
+    res.status(403).json({ message: 'CORS error', details: err.message })
+  } else {
+    res.status(500).json({ message: 'Server error', details: err.message })
+  }
 })
 
 async function ensureStudentRoleEnum() {
