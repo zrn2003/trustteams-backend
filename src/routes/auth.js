@@ -178,6 +178,8 @@ router.post('/signup', async (req, res) => {
 
         return res.status(201).json({
           message: 'University administrator created successfully. Please check your email to verify your account.',
+          emailSent: emailResult.success,
+          emailError: emailResult.success ? null : emailResult.error,
           user: {
             id: result.insertId,
             name: displayName,
@@ -302,6 +304,8 @@ router.post('/signup', async (req, res) => {
         
         return res.status(201).json({
           message: 'Account created successfully! Please check your email to verify your account before signing in.',
+          emailSent: emailResult.success,
+          emailError: emailResult.success ? null : emailResult.error,
           user: {
             id: result.insertId,
             name: displayName,
@@ -376,6 +380,8 @@ router.post('/signup', async (req, res) => {
         
         return res.status(201).json({
           message: 'User created successfully. Please check your email to verify your account.',
+          emailSent: emailResult.success,
+          emailError: emailResult.success ? null : emailResult.error,
           user: {
             id: result.insertId,
             name: displayName,
