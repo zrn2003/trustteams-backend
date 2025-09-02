@@ -19,36 +19,9 @@ import applicationsRouter from './src/routes/applications.js'
 
 const app = express()
 
-// CORS configuration to allow both development and production origins
-const allowedOrigins = [
-  'http://localhost:5173', // Development
-  'http://localhost:3000', // Alternative development port
-  'https://trustteams-frontend.vercel.app', // Production frontend
-  'https://trustteams-frontend-git-main-zrn2003.vercel.app', // Vercel preview deployments
-  'https://trustteams-frontend-git-develop-zrn2003.vercel.app' // Vercel branch deployments
-]
-
 // Enhanced CORS configuration
 app.use(cors({ 
-  origin: function (origin, callback) {
-    console.log('CORS Origin Check:', { origin, allowedOrigins })
-    
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) {
-      console.log('No origin - allowing request')
-      return callback(null, true)
-    }
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      console.log('Origin allowed:', origin)
-      callback(null, true)
-    } else {
-      console.log('CORS blocked origin:', origin)
-      // For debugging, allow all origins temporarily
-      console.log('Temporarily allowing blocked origin for debugging')
-      callback(null, true)
-    }
-  },
+  origin: true, // Allow all origins for now to fix deployment
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'x-user-id'],
@@ -56,24 +29,16 @@ app.use(cors({
   maxAge: 86400 // 24 hours
 }))
 
-// Additional headers middleware
+// Simplified CORS middleware
 app.use((req, res, next) => {
-  console.log('CORS Middleware Debug:', {
-    method: req.method,
-    url: req.url,
-    origin: req.headers.origin,
-    host: req.headers.host,
-    userAgent: req.headers['user-agent']
-  })
-  
-  res.header('Access-Control-Allow-Origin', req.headers.origin || '*')
+  // Set CORS headers for all responses
+  res.header('Access-Control-Allow-Origin', '*')
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH')
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin')
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, x-user-id')
   res.header('Access-Control-Allow-Credentials', 'true')
   
   // Handle preflight requests
   if (req.method === 'OPTIONS') {
-    console.log('Handling OPTIONS preflight request for:', req.url)
     res.status(200).end()
     return
   }
