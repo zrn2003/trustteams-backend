@@ -19,47 +19,22 @@ import applicationsRouter from './src/routes/applications.js'
 
 const app = express()
 
-// Enhanced CORS configuration
-app.use(cors({ 
-  origin: true, // Allow all origins for now to fix deployment
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'x-user-id'],
-  exposedHeaders: ['Content-Length', 'X-Requested-With'],
-  maxAge: 86400 // 24 hours
-}))
+// Minimal CORS configuration that should work on Vercel
+app.use(cors())
 
-// Simplified CORS middleware
-app.use((req, res, next) => {
-  // Set CORS headers for all responses
-  res.header('Access-Control-Allow-Origin', '*')
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH')
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, x-user-id')
-  res.header('Access-Control-Allow-Credentials', 'true')
-  
-  // Handle preflight requests
-  if (req.method === 'OPTIONS') {
-    res.status(200).end()
-    return
-  }
-  
-  next()
-})
-
+// Basic middleware
 app.use(express.json())
 app.use(morgan('dev'))
 
-// Root
+// Test endpoints first
 app.get('/', (req, res) => {
-  res.json({ service: 'trustteams-api', status: 'ok', version: '1.0.1' })
+  res.json({ service: 'trustteams-api', status: 'ok', version: '1.0.2' })
 })
 
-// Health
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
-// CORS test endpoint
 app.get('/api/cors-test', (req, res) => {
   res.json({ 
     message: 'CORS test successful', 
@@ -69,16 +44,7 @@ app.get('/api/cors-test', (req, res) => {
   })
 })
 
-// Simple test endpoint for debugging
-app.get('/api/test', (req, res) => {
-  res.json({ 
-    message: 'API is working', 
-    timestamp: new Date().toISOString(),
-    cors: 'enabled',
-    origin: req.headers.origin || 'none'
-  })
-})
-
+// Routes
 app.use('/api/auth', authRouter)
 app.use('/api/opportunities', oppRouter)
 app.use('/api/student', studentRouter)
@@ -95,8 +61,8 @@ app.use('/api', (req, res) => {
 // Basic error handler
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  console.error(err)
-  res.status(500).json({ message: 'Server error' })
+  console.error('Error occurred:', err)
+  res.status(500).json({ message: 'Server error', details: err.message })
 })
 
 async function ensureStudentRoleEnum() {
