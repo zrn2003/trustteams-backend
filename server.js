@@ -6,7 +6,6 @@ try {
   // dotenv not installed or not needed
 }
 import express from 'express'
-import cors from 'cors'
 import morgan from 'morgan'
 import authRouter from './src/routes/auth.js'
 import oppRouter from './src/routes/opportunities.js'
@@ -19,8 +18,36 @@ import applicationsRouter from './src/routes/applications.js'
 
 const app = express()
 
-// Minimal CORS configuration that should work on Vercel
-app.use(cors())
+// Vercel-specific CORS middleware
+const allowedOrigins = [
+  'https://trustteams-frontend.vercel.app', // Production frontend
+  'http://localhost:5173', // Development
+  'http://localhost:3000' // Alternative development
+]
+
+app.use((req, res, next) => {
+  const origin = req.headers.origin
+  
+  // Set CORS headers for Vercel
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin)
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', 'https://trustteams-frontend.vercel.app')
+  }
+  
+  res.setHeader('Access-Control-Allow-Credentials', 'true')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, x-user-id')
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    console.log('Handling OPTIONS preflight request for:', req.url)
+    res.status(200).end()
+    return
+  }
+  
+  next()
+})
 
 // Basic middleware
 app.use(express.json())
