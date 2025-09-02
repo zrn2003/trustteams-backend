@@ -1,5 +1,6 @@
 import express from 'express'
 import pool from '../db.js'
+import { sendEmail } from '../config/email.js'
 
 const router = express.Router()
 
@@ -243,5 +244,223 @@ router.post('/migrate-applications-table', async (req, res) => {
     })
   }
 })
+
+// Test email endpoint for debugging
+router.post('/test-email', async (req, res) => {
+  try {
+    const { email, name } = req.body;
+    
+    if (!email || !name) {
+      return res.status(400).json({ 
+        message: 'Email and name are required',
+        error: 'Missing required fields'
+      });
+    }
+
+    console.log('=== TEST EMAIL DEBUG ===');
+    console.log('Testing email to:', email);
+    console.log('Email config check:', {
+      EMAIL_USER: process.env.EMAIL_USER ? 'Set' : 'Missing',
+      EMAIL_PASS: process.env.EMAIL_PASS ? 'Set' : 'Missing',
+      FRONTEND_URL: process.env.FRONTEND_URL || 'Not set'
+    });
+
+    // Test email sending
+    const testToken = 'test-token-' + Date.now();
+    const verificationLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-email/${testToken}`;
+    
+    const emailResult = await sendEmail(email, 'verification', [name, verificationLink]);
+    
+    console.log('Email result:', emailResult);
+    
+    return res.json({
+      message: 'Email test completed',
+      emailSent: emailResult.success,
+      emailError: emailResult.success ? null : emailResult.error,
+      emailConfig: {
+        EMAIL_USER: process.env.EMAIL_USER ? 'Set' : 'Missing',
+        EMAIL_PASS: process.env.EMAIL_PASS ? 'Set' : 'Missing',
+        FRONTEND_URL: process.env.FRONTEND_URL || 'Not set'
+      },
+      testData: {
+        to: email,
+        name: name,
+        verificationLink: verificationLink
+      }
+    });
+
+  } catch (error) {
+    console.error('Test email error:', error);
+    return res.status(500).json({ 
+      message: 'Test email failed',
+      error: error.message,
+      stack: error.stack
+    });
+  }
+});
+
+// Comprehensive email test endpoint for debugging
+router.post('/test-email-comprehensive', async (req, res) => {
+  try {
+    const { email, name } = req.body;
+    
+    if (!email || !name) {
+      return res.status(400).json({ 
+        message: 'Email and name are required',
+        error: 'Missing required fields'
+      });
+    }
+
+    console.log('=== COMPREHENSIVE EMAIL TEST ===');
+    console.log('Testing email to:', email);
+    console.log('Test name:', name);
+    
+    // 1. Check environment variables
+    console.log('1. Environment Variables Check:');
+    const envCheck = {
+      EMAIL_USER: process.env.EMAIL_USER ? 'Set' : 'Missing',
+      EMAIL_PASS: process.env.EMAIL_PASS ? 'Set' : 'Missing',
+      FRONTEND_URL: process.env.FRONTEND_URL || 'Not set',
+      NODE_ENV: process.env.NODE_ENV || 'Not set'
+    };
+    console.log('Environment check:', envCheck);
+    
+    // 2. Test email configuration
+    console.log('2. Testing email configuration...');
+    let transporter;
+    try {
+      const { createTransporter } = await import('../config/email.js');
+      transporter = createTransporter();
+      console.log('✅ Transporter created successfully');
+    } catch (transporterError) {
+      console.error('❌ Transporter creation failed:', transporterError);
+      return res.json({
+        message: 'Email test failed at transporter creation',
+        emailSent: false,
+        emailError: transporterError.message,
+        stage: 'transporter_creation',
+        envCheck
+      });
+    }
+    
+    // 3. Test email sending
+    console.log('3. Testing email sending...');
+    const testToken = 'test-token-' + Date.now();
+    const verificationLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/verify-email/${testToken}`;
+    
+    try {
+      const emailResult = await sendEmail(email, 'verification', [name, verificationLink]);
+      console.log('Email sending result:', emailResult);
+      
+      return res.json({
+        message: 'Comprehensive email test completed',
+        emailSent: emailResult.success,
+        emailError: emailResult.success ? null : emailResult.error,
+        emailDetails: emailResult.details || null,
+        stage: 'email_sending',
+        envCheck,
+        testData: {
+          to: email,
+          name: name,
+          verificationLink: verificationLink,
+          token: testToken
+        }
+      });
+      
+    } catch (emailError) {
+      console.error('❌ Email sending failed:', emailError);
+      return res.json({
+        message: 'Email test failed during sending',
+        emailSent: false,
+        emailError: emailError.message,
+        stage: 'email_sending',
+        envCheck,
+        testData: {
+          to: email,
+          name: name,
+          verificationLink: verificationLink,
+          token: testToken
+        }
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Comprehensive email test error:', error);
+    return res.status(500).json({ 
+      message: 'Comprehensive email test failed',
+      error: error.message,
+      stack: error.stack
+    });
+  }
+});
+
+// Temporary endpoint to bypass email verification for testing
+router.post('/bypass-email-verification', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ 
+        message: 'Email is required',
+        error: 'Missing email'
+      });
+    }
+
+    console.log('=== BYPASSING EMAIL VERIFICATION ===');
+    console.log('Email:', email);
+    
+    // Find user by email
+    const [users] = await pool.query(
+      'SELECT id, name, email, email_verified FROM users WHERE email = ?',
+      [email]
+    );
+    
+    if (users.length === 0) {
+      return res.status(404).json({ 
+        message: 'User not found',
+        error: 'No user with this email exists'
+      });
+    }
+    
+    const user = users[0];
+    
+    if (user.email_verified) {
+      return res.json({ 
+        message: 'User already verified',
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          email_verified: true
+        }
+      });
+    }
+    
+    // Mark user as verified
+    await pool.query(
+      'UPDATE users SET email_verified = TRUE, is_active = TRUE, email_verification_token = NULL, email_verification_expires = NULL WHERE id = ?',
+      [user.id]
+    );
+    
+    console.log('✅ User email verification bypassed successfully');
+    
+    return res.json({
+      message: 'Email verification bypassed successfully. User can now log in.',
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        email_verified: true
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Bypass email verification error:', error);
+    return res.status(500).json({ 
+      message: 'Failed to bypass email verification',
+      error: error.message
+    });
+  }
+});
 
 export default router

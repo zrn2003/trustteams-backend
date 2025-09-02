@@ -169,8 +169,18 @@ router.post('/signup', async (req, res) => {
         console.log('University admin created successfully with ID:', result.insertId)
         
         // Send verification email
+        console.log('=== SENDING VERIFICATION EMAIL (UNIVERSITY ADMIN) ===');
+        console.log('Email config check:', {
+          EMAIL_USER: process.env.EMAIL_USER ? 'Set' : 'Missing',
+          EMAIL_PASS: process.env.EMAIL_PASS ? 'Set' : 'Missing',
+          FRONTEND_URL: process.env.FRONTEND_URL || 'Not set'
+        });
+        
         const verificationLink = generateVerificationLink(verificationToken);
+        console.log('Generated verification link:', verificationLink);
+        
         const emailResult = await sendEmail(email, 'verification', [displayName, verificationLink]);
+        console.log('Email sending result:', emailResult);
         
         if (!emailResult.success) {
           console.warn('Failed to send verification email:', emailResult.error);
@@ -295,8 +305,18 @@ router.post('/signup', async (req, res) => {
         }
         
         // Send verification email
+        console.log('=== SENDING VERIFICATION EMAIL (STUDENT/ACADEMIC LEADER) ===');
+        console.log('Email config check:', {
+          EMAIL_USER: process.env.EMAIL_USER ? 'Set' : 'Missing',
+          EMAIL_PASS: process.env.EMAIL_PASS ? 'Set' : 'Missing',
+          FRONTEND_URL: process.env.FRONTEND_URL || 'Not set'
+        });
+        
         const verificationLink = generateVerificationLink(verificationToken);
+        console.log('Generated verification link:', verificationLink);
+        
         const emailResult = await sendEmail(email, 'verification', [displayName, verificationLink]);
+        console.log('Email sending result:', emailResult);
         
         if (!emailResult.success) {
           console.warn('Failed to send verification email:', emailResult.error);
@@ -371,8 +391,18 @@ router.post('/signup', async (req, res) => {
         console.log('ICM user created successfully with ID:', result.insertId)
         
         // Send verification email
+        console.log('=== SENDING VERIFICATION EMAIL (ICM ROLE) ===');
+        console.log('Email config check:', {
+          EMAIL_USER: process.env.EMAIL_USER ? 'Set' : 'Missing',
+          EMAIL_PASS: process.env.EMAIL_PASS ? 'Set' : 'Missing',
+          FRONTEND_URL: process.env.FRONTEND_URL || 'Not set'
+        });
+        
         const verificationLink = generateVerificationLink(verificationToken);
+        console.log('Generated verification link:', verificationLink);
+        
         const emailResult = await sendEmail(email, 'verification', [displayName, verificationLink]);
+        console.log('Email sending result:', emailResult);
         
         if (!emailResult.success) {
           console.warn('Failed to send verification email:', emailResult.error);

@@ -1,13 +1,31 @@
 import nodemailer from 'nodemailer';
 
 const createTransporter = () => {
+  // Add comprehensive logging
+  console.log('=== CREATING EMAIL TRANSPORTER ===');
+  console.log('Email config check:', {
+    EMAIL_USER: process.env.EMAIL_USER ? 'Set' : 'Missing',
+    EMAIL_PASS: process.env.EMAIL_PASS ? 'Set' : 'Missing',
+    FRONTEND_URL: process.env.FRONTEND_URL || 'Not set'
+  });
+  
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    throw new Error('Email configuration incomplete. EMAIL_USER and EMAIL_PASS are required.');
+  }
+
   const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS
-    }
+    },
+    // Add timeout and connection settings
+    connectionTimeout: 60000,
+    greetingTimeout: 30000,
+    socketTimeout: 60000
   });
+  
+  console.log('Email transporter created successfully');
   return transporter;
 };
 
@@ -337,6 +355,11 @@ const emailTemplates = {
 // Main email sending function
 export const sendEmail = async (to, template, data) => {
   try {
+    console.log('=== SEND EMAIL FUNCTION START ===');
+    console.log('Sending email to:', to);
+    console.log('Template:', template);
+    console.log('Data length:', data ? data.length : 0);
+    
     // Validate email configuration
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
       console.error('❌ Email configuration missing:', {
@@ -414,19 +437,51 @@ export const sendEmail = async (to, template, data) => {
         };
     }
     
+    console.log('About to send email with options:', {
+      from: mailOptions.from,
+      to: mailOptions.to,
+      subject: mailOptions.subject,
+      hasHtml: !!mailOptions.html
+    });
+    
     const info = await transporter.sendMail(mailOptions);
     
-    console.log('Email sent successfully:', info.messageId);
+    console.log('✅ Email sent successfully:', info.messageId);
+    console.log('Email response:', info);
+    
     return {
       success: true,
       messageId: info.messageId
     };
     
   } catch (error) {
-    console.error('Error sending email:', error);
+    console.error('❌ Error sending email:', error);
+    console.error('Error details:', {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+      command: error.command,
+      responseCode: error.responseCode,
+      response: error.response
+    });
+    
+    // Provide more specific error messages
+    let errorMessage = error.message;
+    if (error.code === 'EAUTH') {
+      errorMessage = 'Authentication failed. Please check your Gmail app password.';
+    } else if (error.code === 'ECONNECTION') {
+      errorMessage = 'Connection failed. Please check your internet connection.';
+    } else if (error.code === 'ETIMEDOUT') {
+      errorMessage = 'Connection timed out. Please try again.';
+    }
+    
     return {
       success: false,
-      error: error.message
+      error: errorMessage,
+      details: {
+        code: error.code,
+        responseCode: error.responseCode
+      }
     };
   }
 };
