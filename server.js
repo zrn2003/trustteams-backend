@@ -1,10 +1,6 @@
-// Optional dotenv load without hard dependency
-try {
-  const dotenvModule = await import('dotenv')
-  dotenvModule.config()
-} catch (err) {
-  // dotenv not installed or not needed
-}
+// Load environment variables
+import dotenv from 'dotenv'
+dotenv.config()
 import express from 'express'
 import morgan from 'morgan'
 import authRouter from './src/routes/auth.js'
@@ -18,10 +14,26 @@ import applicationsRouter from './src/routes/applications.js'
 
 const app = express()
 
-// Bulletproof CORS solution for Vercel
+// Bulletproof CORS solution for both local and production
 app.use((req, res, next) => {
-  // Always set CORS headers for every request
-  res.setHeader('Access-Control-Allow-Origin', 'https://trustteams-frontend.vercel.app')
+  // Allow both local and production origins
+  const allowedOrigins = [
+    'https://trustteams-frontend.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:3001'
+  ]
+  
+  const origin = req.headers.origin
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin)
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', 'https://trustteams-frontend.vercel.app')
+  }
+  
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, x-user-id')
   res.setHeader('Access-Control-Allow-Credentials', 'true')
@@ -108,7 +120,23 @@ app.use((err, req, res, next) => {
   })
   
   // Ensure CORS headers are set even on errors
-  res.setHeader('Access-Control-Allow-Origin', 'https://trustteams-frontend.vercel.app')
+  const allowedOrigins = [
+    'https://trustteams-frontend.vercel.app',
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:3001'
+  ]
+  
+  const origin = req.headers.origin
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin)
+  } else {
+    res.setHeader('Access-Control-Allow-Origin', 'https://trustteams-frontend.vercel.app')
+  }
+  
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin, x-user-id')
   res.setHeader('Access-Control-Allow-Credentials', 'true')

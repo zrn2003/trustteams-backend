@@ -1,7 +1,34 @@
 import express from 'express'
 import pool from '../db.js'
+import { sendEmail } from '../config/email.js'
 
 const router = express.Router()
+
+// Authentication middleware
+const requireAuth = async (req, res, next) => {
+  try {
+    const userId = req.headers['x-user-id']
+    if (!userId) {
+      return res.status(401).json({ error: 'Authentication required' })
+    }
+    
+    // Verify user exists and is active
+    const [users] = await pool.query(
+      'SELECT id, name, email, role, is_active FROM users WHERE id = ? AND is_active = 1',
+      [userId]
+    )
+    
+    if (users.length === 0) {
+      return res.status(401).json({ error: 'User not found or inactive' })
+    }
+    
+    req.user = users[0]
+    next()
+  } catch (error) {
+    console.error('Authentication error:', error)
+    res.status(500).json({ error: 'Authentication failed' })
+  }
+}
 
 // Helper function to get user role
 async function getUserRole(userId) {
@@ -14,6 +41,19 @@ async function getUserRole(userId) {
   } catch (error) {
     console.error('Error getting user role:', error)
     return null
+  }
+}
+
+// Helper function to get all active students
+async function getAllActiveStudents() {
+  try {
+    const [students] = await pool.query(
+      'SELECT id, name, email FROM users WHERE role = "student" AND is_active = 1 AND email_verified = 1'
+    )
+    return students
+  } catch (error) {
+    console.error('Error getting students:', error)
+    return []
   }
 }
 
@@ -177,9 +217,16 @@ router.get('/', async (req, res) => {
 })
 
 // Create new opportunity
-router.post('/', async (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
-    const userId = req.headers['x-user-id']
+    const userId = req.user.id
+    const userRole = req.user.role
+    
+    // Check if user is authorized to post opportunities
+    if (!['academic_leader', 'icm', 'university_admin'].includes(userRole)) {
+      return res.status(403).json({ error: 'Only academic leaders, ICMs, and university admins can post opportunities' })
+    }
+    
     const { 
       title, 
       type, 
@@ -193,10 +240,6 @@ router.post('/', async (req, res) => {
       contact_email, 
       contact_phone 
     } = req.body
-
-    if (!userId) {
-      return res.status(401).json({ error: 'User ID required' })
-    }
 
     if (!title || !type || !description) {
       return res.status(400).json({ error: 'Title, type, and description are required' })
@@ -232,8 +275,35 @@ router.post('/', async (req, res) => {
       })]
     )
 
+    // Send notification emails to all students
+    try {
+      const students = await getAllActiveStudents()
+      const opportunityLink = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/opportunities/${result.insertId}`
+      
+      for (const student of students) {
+        await sendEmail(student.email, 'opportunity', [
+          student.name,
+          req.user.name,
+          title,
+          type,
+          description,
+          requirements || 'Not specified',
+          stipend || 'Not specified',
+          duration || 'Not specified',
+          location || 'Not specified',
+          closingDate ? new Date(closingDate).toLocaleDateString() : 'No deadline',
+          opportunityLink
+        ])
+      }
+      
+      console.log(`Sent opportunity notifications to ${students.length} students`)
+    } catch (emailError) {
+      console.error('Error sending opportunity notifications:', emailError)
+      // Don't fail the request if email sending fails
+    }
+
     res.status(201).json({
-      message: 'Opportunity created successfully',
+      message: 'Opportunity created successfully and notifications sent to students',
       opportunity: {
         id: result.insertId,
         title,
@@ -326,9 +396,9 @@ router.get('/:id', async (req, res) => {
 })
 
 // Update opportunity
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAuth, async (req, res) => {
   try {
-    const userId = req.headers['x-user-id']
+    const userId = req.user.id
     const { id } = req.params
     const { 
       title, 
@@ -343,10 +413,6 @@ router.put('/:id', async (req, res) => {
       contact_email, 
       contact_phone 
     } = req.body
-
-    if (!userId) {
-      return res.status(401).json({ error: 'User ID required' })
-    }
 
     if (!title || !type || !description) {
       return res.status(400).json({ error: 'Title, type, and description are required' })
@@ -413,14 +479,10 @@ router.put('/:id', async (req, res) => {
 })
 
 // Delete opportunity (soft delete)
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAuth, async (req, res) => {
   try {
-    const userId = req.headers['x-user-id']
+    const userId = req.user.id
     const { id } = req.params
-
-    if (!userId) {
-      return res.status(401).json({ error: 'User ID required' })
-    }
 
     // Check if opportunity exists
     const [existing] = await pool.query(

@@ -175,7 +175,7 @@ router.post('/signup', async (req, res) => {
         if (!emailResult.success) {
           console.warn('Failed to send verification email:', emailResult.error);
         }
-        
+
         return res.status(201).json({
           message: 'University administrator created successfully. Please check your email to verify your account.',
           user: {
@@ -206,61 +206,91 @@ router.post('/signup', async (req, res) => {
       }
     } else if (role === 'student' || role === 'academic_leader') {
       console.log('Processing student/academic leader registration')
-      // Student/Academic Leader registration - requires university validation and approval
-      if (!university_id || !institute_name) {
-        console.log('Missing university_id or institute_name')
-        return res.status(400).json({ message: 'University ID and institute name are required for student/academic leader registration' })
+      // Student/Academic Leader registration - university fields are optional
+      // If not provided, user will be auto-approved and can set these later
+      
+      let universityId = university_id || null;
+      let instituteName = institute_name || null;
+      
+      // Try to auto-detect university from email domain if not provided
+      if (!universityId) {
+        const emailDomain = email.split('@')[1];
+        console.log('Attempting to auto-detect university from email domain:', emailDomain);
+        
+        try {
+          const [universities] = await pool.query(
+            'SELECT id, name FROM universities WHERE domain = ? AND is_active = true',
+            [emailDomain]
+          );
+          
+          if (universities.length > 0) {
+            universityId = universities[0].id;
+            instituteName = instituteName || universities[0].name;
+            console.log('Auto-detected university:', universities[0].name, 'ID:', universityId);
+          }
+        } catch (error) {
+          console.log('Could not auto-detect university from domain:', error.message);
+        }
       }
 
       try {
-        console.log('Checking if university exists:', university_id)
-        // Check if university exists
+         // Only check university if one was provided
+         if (universityId) {
+           console.log('Checking if university exists:', universityId)
         const [universities] = await pool.query(
           'SELECT id, name FROM universities WHERE id = ? AND is_active = true',
-          [university_id]
+             [universityId]
         )
 
         if (universities.length === 0) {
-          console.log('University not found:', university_id)
+             console.log('University not found:', universityId)
           return res.status(400).json({ message: 'University not found. Please select a valid university.' })
         }
 
         console.log('University found:', universities[0].name)
+         } else {
+           console.log('No university provided - creating user without university association')
+         }
 
-        // Check if university has an admin
-        console.log('Checking if university has an admin')
-        const [universityAdmins] = await pool.query(
-          'SELECT id FROM users WHERE university_id = ? AND role = ? AND approval_status = ?',
-          [university_id, 'university_admin', 'approved']
-        )
-
-        if (universityAdmins.length === 0) {
-          console.log('University has no approved admin')
-          return res.status(400).json({ message: 'University does not have an administrator yet. Please contact the system administrator.' })
-        }
-
-        console.log('University has admin, creating user')
-        // Create user with pending approval
+        console.log('Creating user with auto-approval')
+        // Create user with auto-approval (no need to wait for admin)
         
         // Generate email verification token
         const verificationToken = generateVerificationToken();
         const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
         
+        console.log('=== VERIFICATION TOKEN DEBUG ===');
+        console.log('Generated token:', verificationToken);
+        console.log('Token length:', verificationToken.length);
+        console.log('Token expires:', verificationExpires);
+        console.log('About to insert with token:', verificationToken);
+        
         const [result] = await pool.query(
           'INSERT INTO users (name, email, password, role, university_id, institute_name, approval_status, is_active, email_verified, email_verification_token, email_verification_expires, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
-          [displayName, email, password, role, university_id, institute_name, 'pending', false, false, verificationToken, verificationExpires]
+          [displayName, email, password, role, universityId, instituteName, 'approved', true, false, verificationToken, verificationExpires]
         )
+        
+        console.log('User inserted, now verifying storage...');
+        // Verify the token was stored correctly
+        const [verifyUser] = await pool.query(
+          'SELECT email_verification_token FROM users WHERE id = ?',
+          [result.insertId]
+        );
+        console.log('Stored token in database:', verifyUser[0]?.email_verification_token);
+        console.log('Token match:', verifyUser[0]?.email_verification_token === verificationToken);
+        console.log('=== END VERIFICATION TOKEN DEBUG ===');
 
         console.log('User created with ID:', result.insertId)
 
-        // Create registration request
-        console.log('Creating registration request')
+        // Create registration request only if university is provided
+        if (universityId) {
+          console.log('Creating registration request for university:', universityId);
         await pool.query(
           'INSERT INTO registration_requests (user_id, university_id, institute_name, role, status, created_at) VALUES (?, ?, ?, ?, ?, NOW())',
-          [result.insertId, university_id, institute_name, role, 'pending']
-        )
-
-        console.log('Registration request created successfully')
+            [result.insertId, universityId, instituteName, role, 'approved']
+          );
+          console.log('Registration request created successfully');
+        }
         
         // Send verification email
         const verificationLink = generateVerificationLink(verificationToken);
@@ -271,15 +301,15 @@ router.post('/signup', async (req, res) => {
         }
         
         return res.status(201).json({
-          message: 'Registration request submitted successfully. Please check your email to verify your account, then wait for university administrator approval.',
+          message: 'Account created successfully! Please check your email to verify your account before signing in.',
           user: {
             id: result.insertId,
             name: displayName,
             email,
             role,
-            university_id,
-            institute_name,
-            approval_status: 'pending'
+            university_id: universityId,
+            institute_name: instituteName,
+            approval_status: 'approved'
           }
         })
       } catch (dbError) {
@@ -313,10 +343,26 @@ router.post('/signup', async (req, res) => {
         const verificationToken = generateVerificationToken();
         const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
         
+        console.log('=== ICM VERIFICATION TOKEN DEBUG ===');
+        console.log('Generated token:', verificationToken);
+        console.log('Token length:', verificationToken.length);
+        console.log('Token expires:', verificationExpires);
+        console.log('About to insert with token:', verificationToken);
+        
         const [result] = await pool.query(
           'INSERT INTO users (name, email, password, role, approval_status, is_active, email_verified, email_verification_token, email_verification_expires, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
           [displayName, email, password, role, 'approved', true, false, verificationToken, verificationExpires]
         )
+        
+        console.log('ICM user inserted, now verifying storage...');
+        // Verify the token was stored correctly
+        const [verifyUser] = await pool.query(
+          'SELECT email_verification_token FROM users WHERE id = ?',
+          [result.insertId]
+        );
+        console.log('Stored token in database:', verifyUser[0]?.email_verification_token);
+        console.log('Token match:', verifyUser[0]?.email_verification_token === verificationToken);
+        console.log('=== END ICM VERIFICATION TOKEN DEBUG ===');
 
         console.log('ICM user created successfully with ID:', result.insertId)
         
@@ -528,11 +574,11 @@ router.put('/profile', async (req, res) => {
       return res.status(400).json({ message: 'No changes provided' })
     }
 
-    values.push(userId)
-    await pool.query(
-      `UPDATE users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`,
-      values
-    )
+      values.push(userId)
+      await pool.query(
+        `UPDATE users SET ${updates.join(', ')}, updated_at = NOW() WHERE id = ?`,
+        values
+      )
 
     return res.json({ message: 'Profile updated successfully' })
   } catch (error) {
@@ -541,10 +587,15 @@ router.put('/profile', async (req, res) => {
   }
 })
 
-// Email verification endpoint
+// Email verification endpoint - handle both path and query parameters
 router.get('/verify-email/:token', async (req, res) => {
   try {
-    const { token } = req.params;
+    let { token } = req.params;
+    
+    // If no token in path, try to get from query parameter
+    if (!token) {
+      token = req.query.token;
+    }
 
     console.log('=== EMAIL VERIFICATION REQUEST ===');
     console.log('Token received:', token);
@@ -614,7 +665,7 @@ router.get('/verify-email/:token', async (req, res) => {
       );
 
       const verificationLink = generateVerificationLink(newVerificationToken);
-      const emailResult = await sendEmail(user.email, 'verification', [user.name, verificationLink]);
+      const emailResult = await sendEmail(user.email, 'resend', [user.name, verificationLink]);
 
       if (!emailResult.success) {
         console.warn('Failed to send new verification email:', emailResult.error);
@@ -670,6 +721,8 @@ router.get('/verify-email/:token', async (req, res) => {
   }
 });
 
+
+
 // Resend verification email endpoint
 router.post('/resend-verification', async (req, res) => {
   try {
@@ -707,7 +760,7 @@ router.post('/resend-verification', async (req, res) => {
 
     // Send verification email
     const verificationLink = generateVerificationLink(verificationToken);
-    const emailResult = await sendEmail(user.email, 'verification', [user.name, verificationLink]);
+    const emailResult = await sendEmail(user.email, 'resend', [user.name, verificationLink]);
 
     if (!emailResult.success) {
       return res.status(500).json({ 
@@ -729,6 +782,8 @@ router.post('/resend-verification', async (req, res) => {
   }
 });
 
+
+
+
+
 export default router
-
-

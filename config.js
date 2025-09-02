@@ -2,7 +2,7 @@
 export const emailConfig = {
   EMAIL_USER: process.env.EMAIL_USER || '',
   EMAIL_PASS: process.env.EMAIL_PASS || '',
-  FRONTEND_URL: process.env.FRONTEND_URL || 'https://trustteams-frontend.vercel.app'
+  FRONTEND_URL: process.env.FRONTEND_URL || 'http://localhost:5173'
 };
 
 // Validate email configuration
@@ -26,5 +26,5 @@ export const serverConfig = {
   NODE_ENV: 'development',
   JWT_SECRET: 'your-secret-key',
   JWT_EXPIRES_IN: '24h',
-  CORS_ORIGIN: 'https://trustteams-frontend.vercel.app'
+  CORS_ORIGIN: 'http://localhost:5173'
 };
