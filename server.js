@@ -19,6 +19,7 @@ const app = express()
 app.use((req, res, next) => {
   // Allow both local and production origins
   const allowedOrigins = [
+    'https://trustteams.vercel.app',
     'https://trustteams-frontend.vercel.app',
     'http://localhost:5173',
     'http://localhost:3000',
